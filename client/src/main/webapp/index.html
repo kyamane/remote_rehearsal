@@ -1,0 +1,27 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="main.css">
+  <title>Video Test</title>
+</head>
+  <body>
+    <input type="text" id="nameText" value="Anonymous"</input>
+    <input type="button" id="openCameraButton" value="Join Call" onclick="openCamera()"></input>
+    <br /><br />
+    <div>
+      <div class="remoteVideoDiv">
+      </div>
+    </div>
+    <br />
+    <div class="localVideoDiv">
+      <video class="localVideo" id="localVideo" playsinline autoplay width="320" height="240"></video><br />
+      <div id="localVideoNameDiv"></div>
+    </div>
+
+    <script src="./config.js"></script>
+    <script src="./js/dialog.js"></script>
+    <script src="./socket.io/socket.io.js"></script>
+
+  </body>
+</html>

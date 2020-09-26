@@ -1,0 +1,8 @@
+.remoteVideo {
+  border: 2px solid red;
+  padding: 8px 12px;
+}
+.localVideo {
+  border: 2px solid blue;
+  padding: 8px 12px;
+}

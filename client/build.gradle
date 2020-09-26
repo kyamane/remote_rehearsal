@@ -1,0 +1,20 @@
+description = 'Project for Remote Rehearsal'
+
+repositories {
+  mavenCentral()
+}
+
+apply plugin: 'java'
+apply plugin: 'war'
+apply plugin: 'eclipse'
+
+
+dependencies {
+            compile 'javax.servlet:javax.servlet-api:3.1.0',
+            'xalan:serializer:2.7.1',
+            'log4j:log4j:1.2.17'
+
+}
+war {
+    archiveName = 'remote_rehearsal.war'
+}
