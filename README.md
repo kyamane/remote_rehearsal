@@ -19,7 +19,7 @@ The main script is [server/app.js](https://github.com/kyamane/remote_rehearsal/b
 To allow connections from clients not on localhost, you'll need an SSL server with a verified certificate.
 ```
 $ cd server
-$ npm instal
+$ npm install
 $ node app.js
 ```
 
@@ -41,11 +41,11 @@ Again, you'll need an SSL server with a verified certificate to connection from 
 1. Echo cancellation is turned off, so make sure that the microphone does not pick up the sound from the system (i.e. always use a headset). 
 1. Open the main HTML file in the latest version of Chrome.
 1. Input your name to the text box, check the conductor box if you are the conductor, and click "Join."
-Note that the behavior in case multiple conductors exist in the same rehearsal is undefined ;)
+Note that the behavior in case multiple conductors exist in the rehearsal is undefined ;)
 1. Click "Leave" to leave the rehearsal.
 
 ## Future Plan
 - [ ] In the conductor view, arrange the player videos in the standard orchestra layout.
 - [ ] Instant replay: while the conductor is conducting, turn off the audio of all clients and record the video of all players; then replay all recordings synchronized to the conductor's stream. 
 Not ideal, but at least this will 1) avoid the confusion due to delays and 2) provide semi-realtime feedback.
-- [ ] Conductor movement prediction: 1) build a (DNN?) model of conductor movement, perhaps using data from skeleton tracking with Azure Kinect; 2) learn a model to reconstruct conductor appearance from skeleton movement; 3) during rehearsal, show the conductor movement 2T seconds ahead of real time to the players, where T is the one-way latency between the conductor and players. The conductor should hear the sound like in an in-person rehearsal.
+- [ ] Conductor movement prediction: 1) build a (DNN?) model of conductor movement, perhaps using data from skeleton tracking with Azure Kinect; 2) learn a model to reconstruct conductor appearance from skeleton movement; 3) during rehearsal, show the conductor movement 2T seconds ahead of real time to the players, where T is the one-way latency between the conductor and players. Theoretically, the conductor should hear the sound like in an in-person rehearsal.
