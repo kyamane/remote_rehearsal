@@ -139,7 +139,6 @@ function join() {
             var parent_div = localVideo.parentElement;
             var div_height = parent_div.getBoundingClientRect().height - textHeight;
             var div_width = parent_div.getBoundingClientRect().width;
-            console.log("parent_div: " + div_height + ", " + div_width);
             set_video_size(div_width, div_height, localVideo);
             localVideo.srcObject = stream;
             if(conductor) {
@@ -153,7 +152,6 @@ function join() {
         }
 
         function setupSocket() {
-            console.log("host = " + config.host);
             socket = io.connect(config.host, {secure: true});
 //            socket = io.connect(config.host, {rejectUnauthorized: false, secure: true});
             socket.on('signal', gotMessageFromServer);
@@ -238,7 +236,6 @@ function join() {
                     parent_div = document.querySelector('.playerViewConductorVideoDiv');
                     var p_height = parent_div.getBoundingClientRect().height - textHeight;
                     var p_width = parent_div.getBoundingClientRect().width;
-                    console.log("conductor display: " + p_height + ", " + p_width);
                     set_video_size(p_width, p_height, video);
                 }
                 else {
@@ -251,7 +248,6 @@ function join() {
                     var p_height = parent_div.getBoundingClientRect().height - textHeight;
                     var p_width = parent_div.getBoundingClientRect().width;
                     var v_width = p_width / n_player_videos;
-                    console.log("p_height: " + p_height + ", p_width: " + p_width + ", n_player_videos: " + n_player_videos + ", v_width: " + v_width);
                     set_video_size(v_width, p_height, video);
                 }
             }
