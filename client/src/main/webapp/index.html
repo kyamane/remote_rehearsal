@@ -1,23 +1,78 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <meta charset="utf-8">
-  <link rel="stylesheet" href="main.css">
-  <title>Video Test</title>
-</head>
-  <body>
-    <input type="text" id="nameText" value="Anonymous"</input>
-    <input type="button" id="openCameraButton" value="Join Call" onclick="openCamera()"></input>
-    <br /><br />
-    <div>
-      <div class="remoteVideoDiv">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="main.css">
+    <title>Video Test</title>
+  </head>
+  <body onload=startSession()>
+    <!-- join the rehearsal -->
+    <div class="clientSettingView" id="clientSettingDiv">
+      <p>Remote Rehearsal ver.0.0.1</p>
+      <input type="text" id="nameText" value="Your Name"></input>
+      <input type="checkbox" id="conductorCheckbox" value="1"></input>
+      <label for="conductorCheckbox">Conductor</label>
+      <input type="button" id="joinButton" value="Join" onclick="join()"></input>
+      <input type="button" id="leaveButton" value="Leave" onclick="leave()" disabled></input>
+    </div>
+
+    <!-- conductor view -->
+    <div id="conductorViewDiv" style="display:none">
+      <div class="mainView">
+        <!-- players in tile -->
+        <div class="conductorViewPlayerVideoDiv">
+        </div>
+      </div>
+      <div class="bottomView">
+        <table style="width:100%; height:100%;">
+          <tr>
+            <td>
+              <!-- small conductor view at the bottom center -->
+              <div class="conductorViewLocalVideoDiv">
+                <video class="conductorViewLocalVideo" id="conductorViewLocalVideo" height="0" width="0" playsinline autoplay ></video>
+                <div id="conductorViewLocalNameDiv"></div>
+              </div>
+            </td>
+          </tr>
+        </table>
       </div>
     </div>
-    <br />
-    <div class="localVideoDiv">
-      <video class="localVideo" id="localVideo" playsinline autoplay width="320" height="240"></video><br />
-      <div id="localVideoNameDiv"></div>
+    <!-- end of conductor view -->
+
+    <!-- player view -->
+    <div id="playerViewDiv" style="display:none">
+      <!-- large view of the conductor -->
+      <div class="mainView">
+        <table style="width:100%; height:100%;">
+          <tr>
+            <td>
+              <div class="playerViewConductorVideoDiv">
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div class="bottomView">
+        <table style="width:100%; height:100%;">
+          <colgroup><col span="1" stype="width:85%;" /><col span="1" style="width:15%;"/></colgroup>
+          <tr>
+            <td>
+              <!-- small player views at the bottom -->
+              <div class="playerViewPlayerVideoDiv">
+              </div>
+            </td>
+            <td>
+              <!-- small local view at the bottom right corner -->
+              <div class="playerViewLocalVideoDiv">
+                <video class="playerViewLocalVideo" id="playerViewLocalVideo" height="0" width="0" playsinline autoplay ></video>
+                <div id="playerViewLocalNameDiv"></div>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
     </div>
+    <!-- end of player view -->
 
     <script src="./config.js"></script>
     <script src="./js/dialog.js"></script>

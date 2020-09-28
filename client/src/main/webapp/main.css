@@ -1,8 +1,71 @@
-.remoteVideo {
-  border: 2px solid red;
-  padding: 8px 12px;
+html,body {
+  height:100%;
 }
-.localVideo {
-  border: 2px solid blue;
-  padding: 8px 12px;
+div.clientSettingView {
+  position: relative;
+  height: 4rem;
+  width: 100%;
+  text-align: center;
+  background-color: #ddddff;
+}
+div.mainView {
+  position: relative;
+  top: 10px;
+  height: 600px;
+  width: 100%;
+  text-align: center;
+  background-color: #ffbbbb;
+}
+div.bottomView{
+  position: relative;
+  top: 10px;
+  height: 100px;
+  width: 100%;
+  text-align: center;
+}
+
+.conductorViewPlayerVideo {
+  border: 2px solid red;
+}
+.conductorViewPlayerVideoDiv {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  grid-template-rows: repeat(auto-fit, minmax(100px, 1fr));
+}
+.conductorViewLocalVideoDiv {
+  height: 100%;
+  width: 100%;
+  text-align: center;
+}
+.conductorViewLocalVideo {
+  border: 2px solid #44aa44;
+}
+
+.playerViewConductorVideo {
+  border: 2px solid red;
+}
+.playerViewConductorVideoDiv {
+  height: 100%;
+  width: 100%;
+  text-align: center;
+}
+.playerViewPlayerVideo {
+  border: 2px solid #88dd88;
+}
+.playerViewPlayerVideoDiv {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  background-color: #99ff99;
+}
+.playerViewLocalVideo {
+  border: 2px solid #44aa44;
+}
+.playerViewLocalVideoDiv {
+  height: 100%;
+  width: 100%;
+  background-color: #dddddd;
 }
