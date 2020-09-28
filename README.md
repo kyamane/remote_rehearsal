@@ -19,6 +19,7 @@ The main script is [server/app.js](https://github.com/kyamane/remote_rehearsal/b
 To allow connections from clients not on localhost, you'll need an SSL server with a verified certificate.
 ```
 $ cd server
+$ npm instal
 $ node app.js
 ```
 
