@@ -30,5 +30,5 @@ io.on('connection', function(socket){
 
 app.listen(3000, function() {
 //    console.log("Express server listening on port %d in %s mode", app.address().port, app.settings.env);
-    console.log("Express server listening on port %d", app.address().port);
+    console.log("Server listening on port %d", app.address().port);
 });
