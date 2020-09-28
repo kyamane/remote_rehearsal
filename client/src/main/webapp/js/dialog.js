@@ -19,6 +19,7 @@ const constraints = {
     audio: {
         autoGainControl: false,
         noiseSuppression: false,
+        echoCancellation: false,
         latency: {ideal: 0.01, max: 0.1},
         channelCount: {ideal: 2, min: 1}
     }
