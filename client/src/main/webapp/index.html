@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <link rel="stylesheet" href="main.css">
+    <script type="text/javascript" src="./js/jquery-3.2.1.min.js"></script>
     <title>Video Test</title>
   </head>
   <body onload=startSession()>
@@ -18,7 +19,12 @@
 
     <!-- conductor view -->
     <div id="conductorViewDiv" style="display:none">
+      <div id="videoLinkDiv" style="display:none">
+      </div>
       <div class="mainView">
+        <div class="conductorUI">
+          <input type="button" id="startRecordingButton" value="Start Recording" onclick="startRecordingButtonCallback()"></input>
+        </div>
         <!-- players in tile -->
         <div class="conductorViewPlayerVideoDiv">
         </div>
@@ -41,6 +47,8 @@
 
     <!-- player view -->
     <div id="playerViewDiv" style="display:none">
+      <div id="dummyDiv" style="display:none">
+      </div>
       <!-- large view of the conductor -->
       <div class="mainView">
         <table style="width:100%; height:100%;">
