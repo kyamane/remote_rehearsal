@@ -19,8 +19,11 @@ io.on('connection', function(socket){
 	io.to(toId).emit('signal', socket.id, message);
     });
 
-    socket.on('local-blob', (toId, buffer) => {
-	io.to(toId).emit('local-blob', socket.id, buffer);
+    socket.on('video-blob', (toId, buffer) => {
+	io.to(toId).emit('video-blob', socket.id, buffer);
+    });
+    socket.on('audio-blob', (toId, buffer) => {
+	io.to(toId).emit('audio-blob', socket.id, buffer);
     });
 
     socket.on("message", function(data) {

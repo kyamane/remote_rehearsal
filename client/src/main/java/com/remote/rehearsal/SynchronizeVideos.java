@@ -9,6 +9,7 @@ import java.util.Scanner;
 import java.util.Base64;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.TimeUnit;
 import java.security.MessageDigest;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +23,9 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+
 import org.json.JSONObject;
 
 import org.apache.log4j.Logger;
@@ -33,6 +37,15 @@ import org.apache.log4j.Logger;
 public class SynchronizeVideos extends HttpServlet {
     private static final long serialVersionUID = 1L;
     static final Logger Log = Logger.getLogger(SynchronizeVideos.class);
+
+    final String videoSaveDir = "/opt/apache-tomcat-9.0.38/temp/";
+    int recordingId = 0;
+    String conductorId;
+    String conductorVideoFileName;
+    String conductorAudioFileName;
+    String[] playerIds;
+    String[] playerVideoFileNames;
+    String[] playerAudioFileNames;
 
     public SynchronizeVideos() {
         super();
@@ -122,7 +135,7 @@ public class SynchronizeVideos extends HttpServlet {
             byte[] unmasked = unmask(index, bytes, masks, from_index, to_index);
             os.write(unmasked);
         } catch(Exception e) {
-            e.printStackTrace();
+            Log.debug(e.getMessage());
         }
     }
 
@@ -146,7 +159,7 @@ public class SynchronizeVideos extends HttpServlet {
                     break;
                 }
                 long temp_fragment_read = total_fragment_read + nbytes;
-//                Log.debug("[" + n_chunks + "] nbytes = " + nbytes + ", temp_fragment_read = " + temp_fragment_read);
+                Log.debug("[" + n_chunks + "] nbytes = " + nbytes + ", temp_fragment_read = " + temp_fragment_read);
                 n_chunks++;
                 // the entire chunk belongs to the current fragment
                 if(temp_fragment_read <= fragment_size) {
@@ -193,9 +206,10 @@ public class SynchronizeVideos extends HttpServlet {
                         total_payload_read += payload_end - payload_start;
                         total_fragment_read += payload_end - payload_start + header_size[0];
                         Log.debug("(3) total_fragment_read = " + total_fragment_read + ", total_payload_read = " + total_payload_read);
-                        if(payload_end == next_fragment_start) {
-                            total_fragment_read = 0;
-                        }
+                    }
+                    if(payload_end == next_fragment_start) {
+                        total_fragment_read = 0;
+                        fragment_size = 0;
                     }
                 }
                 if(total_fragment_read == fragment_size && final_fragment[0]) {
@@ -204,12 +218,12 @@ public class SynchronizeVideos extends HttpServlet {
                 }
             }
         } catch(Exception e) {
-            e.printStackTrace();
+            Log.debug(e.getMessage());
         }
         return total_payload_read;
     }
 
-    private void acceptWebSocketClient(ServerSocket server) {
+    private void acceptWebSocketClient(ServerSocket server, int index) {
         try {
             Socket client = server.accept();
             Log.debug("client connected");
@@ -237,31 +251,303 @@ public class SynchronizeVideos extends HttpServlet {
                 Boolean[] valid_fragment = new Boolean[1];
                 Boolean[] final_fragment = new Boolean[1];
                 int[] header_size = new int[1];
-                String name = "Dummy";
-                String id = "none";
-                String videoType = "local";
                 nbytes = in.read(bytes);
                 fragment_size = analyzeHeader(bytes, valid_fragment, final_fragment, masks, header_size);
                 byte[] b_msg = unmask(0, bytes, masks, header_size[0], (int)fragment_size);
                 String msg = new String(b_msg, StandardCharsets.UTF_8);
                 JSONObject json_object = new JSONObject(msg);
-                name = json_object.getString("name");
-                id = json_object.getString("id");
-                videoType = json_object.getString("type");
-                Log.debug("name: " + name + ", id: " + id + ", videoType: " + videoType);
+                String name = json_object.getString("name").replace(' ', '_');
+                String id = json_object.getString("id");
+                String role = json_object.getString("role");
+                String media = json_object.getString("media");
+                Log.debug("name: " + name + ", id: " + id + ", role: " + role + ", media: " + media);
 
-                File file = new File("/opt/apache-tomcat-9.0.38/temp/" + videoType + "_" + name + "_" + id + ".webm");
-                OutputStream os = new FileOutputStream(file);
+                String ext;
+                if(media.equals("video")) ext = ".webm";
+                else ext = ".weba";
+                String filename = new String(String.format("%03d_", recordingId) + role + "_" + name + "_" + id + "_" + media + ext);
+                File file = new File(videoSaveDir + filename);
+                if(role.equals("conductor")) {
+                    if(media.equals("video")) {
+                        conductorVideoFileName = filename;
+                    }
+                    else {
+                        conductorAudioFileName = filename;
+                    }
+                }
+                else {
+                    int count = -1;
+                    for(int i=0; i<playerIds.length; i++) {
+                        if(playerIds[i].equals(id)) {
+                            count = i;
+                            break;
+                        }
+                    }
+                    if(media.equals("video")) {
+                        playerVideoFileNames[count] = filename;
+                    }
+                    else {
+                        playerAudioFileNames[count] = filename;
+                    }
+                }
+                OutputStream os = new FileOutputStream(file, false);
                 // now receive the video data
                 long total_payload_read = readVideoData(in, os);
                 Log.debug("total_payload_read = " + total_payload_read);
                 os.close();
             }
         } catch(Exception e) {
-            e.printStackTrace();
+            Log.debug(e.getMessage());
         }
     }
 
+    protected double calcCorrelation(double[] d1, double[] d2) {
+        int n = d1.length;
+        double d1sum = 0.0, d2sum = 0.0;
+        double d1sqsum = 0.0, d2sqsum = 0.0;
+        double d12sum = 0.0;
+        for(int i=0; i<n; i++) {
+            d1sum += d1[i];
+            d1sqsum += d1[i] * d1[i];
+            d2sum += d2[i];
+            d2sqsum += d2[i] * d2[i];
+            d12sum += d1[i] * d2[i];
+        }
+        return (n*d12sum - d1sum*d2sum)/Math.sqrt((n*d1sqsum-d1sum*d1sum)*(n*d2sqsum-d2sum*d2sum));
+    }
+
+    protected String secondsToHMS(double secs) {
+        long msecs = (long)(secs * 1000);
+        long hours = TimeUnit.MILLISECONDS.toHours(msecs);
+        msecs -= TimeUnit.HOURS.toMillis(hours);
+        long minutes = TimeUnit.MILLISECONDS.toMinutes(msecs);
+        msecs -= TimeUnit.MINUTES.toMillis(minutes);
+        long seconds = TimeUnit.MILLISECONDS.toSeconds(msecs);
+        msecs -= TimeUnit.SECONDS.toMillis(seconds);
+        return new String(String.format("%02d", hours) + ":" + String.format("%02d", minutes) + ":" + String.format("%02d", seconds) + "." + String.format("%03d", msecs));
+    }
+
+    // place conductor at the center of the top row
+    protected String conductorCenterTopLayout(int n_players) {
+        // find number of rows/cols
+        int nCols = 0;
+        for(int i=2; ; i++) {
+            if(n_players < (i-1)*i) {
+                nCols = i;
+                break;
+            }
+        }
+        Log.debug("n_players: " + n_players + ", nCols: " + nCols);
+        String cmd = "";
+        // conductor
+        cmd = cmd + "[0:v]pad=iw*" + nCols + ":ih*" + nCols + ":(ow-iw)/2:0";
+        // players
+        for(int i=0; i<n_players; i++) {
+            int row = i/nCols + 1;
+            int col = i%nCols;
+            String colString = "0";
+            if(col == 1) colString = new String("W/" + nCols);
+            else if(col > 1) colString = new String(col + "*W/" + nCols);
+            String rowString = new String("H/" + nCols);
+            if(row != 1) rowString = new String(row + "*H/" + nCols);
+            cmd = cmd + "[int];[int][" + (i+1) + ":v]overlay=" + colString + ":" + rowString;
+        }
+        cmd = cmd + "[vid];";
+        // audio including conductor's
+        for(int i=0; i<n_players+1; i++) {
+            cmd = cmd + "[" + i + ":a]";
+        }
+        cmd = cmd + "amix=inputs=2:duration=longest[aud]";
+        return cmd;
+    }
+
+    protected void synchronize() {
+        // convert all audio files to wav with the same sampling rate
+        File[] videoInFiles = new File[playerIds.length + 1];
+        File[] audioInFiles = new File[playerIds.length + 1];
+        File[] videoOutFiles = new File[playerIds.length + 1];
+        File[] audioOutFiles = new File[playerIds.length + 1];
+        videoInFiles[0] = new File(videoSaveDir + conductorVideoFileName);
+        audioInFiles[0] = new File(videoSaveDir + conductorAudioFileName);
+        for(int i=0; i<playerIds.length; i++) {
+            videoInFiles[i+1] = new File(videoSaveDir + playerVideoFileNames[i]);
+            audioInFiles[i+1] = new File(videoSaveDir + playerAudioFileNames[i]);
+        }
+        int samplingRate = 48000;
+        for(int i=0; i<audioInFiles.length; i++) {
+            String vpath = videoInFiles[i].getAbsolutePath();
+            int vext = vpath.lastIndexOf('.');
+            videoOutFiles[i] = new File(vpath.substring(0, vext) + ".mp4");
+            String apath = audioInFiles[i].getAbsolutePath();
+            int aext = apath.lastIndexOf('.');
+            audioOutFiles[i] = new File(apath.substring(0, aext) + ".wav");
+            // jave2 encode() function appends audio, so delete
+            if(audioOutFiles[i].exists() && audioOutFiles[i].delete()) {
+                Log.debug(audioOutFiles[i].getName() + " deleted");
+            }
+            try {
+                // audio: wav
+                {
+                    Log.debug("converting " + audioInFiles[i].getAbsolutePath());
+                    String[] commands = new String[7];
+                    commands[0] = "ffmpeg";
+                    commands[1] = "-y";
+                    commands[2] = "-i";
+                    commands[3] = audioInFiles[i].getAbsolutePath();
+                    commands[4] = "-c:a";
+                    commands[5] = "pcm_s16le";
+                    commands[6] = audioOutFiles[i].getAbsolutePath();
+                    Process process = Runtime.getRuntime().exec(commands);
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        Log.debug(line);
+                    }
+                    reader.close();
+                    Log.debug("conversion done");
+                }
+            }
+            catch(Exception e) {
+                Log.debug(e.getMessage());
+            }
+        }
+        // generate reference signal of 440Hz sine wave
+        double referenceFrequency = 440.0;
+        double referenceLengthSec = 0.01;
+        int referenceLengthFrames = (int)((double)samplingRate * referenceLengthSec);
+        double[] referenceData = new double[referenceLengthFrames];
+        for(int i=0; i<referenceLengthFrames; i++) {
+            referenceData[i] = Math.sin(2.0*Math.PI*referenceFrequency*(double)i/(double)samplingRate);
+        }
+
+        // timestamp when the sync signal (440Hz oscillation) ends in each audio
+        double[] startTimes = new double[audioOutFiles.length];
+        double[] durations = new double[audioOutFiles.length];
+        double minLength = 1e10;
+        boolean success = true;
+        for(int i=0; i<audioOutFiles.length; i++) {
+            try {
+                AudioInputStream stream = AudioSystem.getAudioInputStream(audioOutFiles[i]);
+                long frameLength = stream.getFrameLength();
+                durations[i] = (double)frameLength / (double)samplingRate;
+                Log.debug(audioOutFiles[i].getName() + ": length = " + frameLength);
+                byte[] data = new byte[(int)(5*frameLength)];
+                int nbytes = stream.read(data);
+                Log.debug(nbytes + " bytes read");
+
+                double[] audioData = new double[(int)frameLength];
+                // 4 bytes per sample; save first 2
+                for(int k=0; k<nbytes; k+=4) {
+//                    byte[] arr = {data[k], data[k+1]};
+                    byte[] arr = {data[k+1], data[k]};
+                    ByteBuffer wrapped = ByteBuffer.wrap(arr);
+                    short svalue = (short)(wrapped.getShort());
+                    double dvalue = (double)svalue/(double)Short.MAX_VALUE;
+                    audioData[k/4] = dvalue;
+                }
+                // compute cross correlation with reference
+                String path = audioOutFiles[i].getAbsolutePath();
+                int ext = path.lastIndexOf('.');
+                double[] correlation = new double[(int)frameLength-referenceLengthFrames+1];
+//                FileWriter fw = new FileWriter(path.substring(0, ext) + ".csv");
+//                int saveInterval = 10;
+                for(int k=0; k+referenceLengthFrames<=frameLength; k++) {
+                    double[] target = Arrays.copyOfRange(audioData, k, k+referenceLengthFrames);
+                    correlation[k] = calcCorrelation(referenceData, target);
+//                    if(k % saveInterval == 0) {
+//                        fw.write(String.format("%2.6f,%2.6f,%2.6f\n", (double)k/(double)samplingRate, audioData[k], correlation[k]));
+//                    }
+                }
+//                fw.close();
+                startTimes[i] = 0.0;
+                // find the last frame with corr > 0.95
+                for(int k=correlation.length-1; k>=0; --k) {
+                    if(correlation[k] > 0.95) {
+                        startTimes[i] = (double)k/(double)samplingRate + referenceLengthSec;
+                        break;
+                    }
+                }
+                Log.debug("startTime[" + i + "]: " + startTimes[i] + ", duration = " + durations[i]);
+                double length = durations[i] - startTimes[i];
+                if(length < minLength) {
+                    minLength = length;
+                }
+                if(startTimes[i] < 0.1) {
+                    Log.debug("sync failed");
+                    success = false;
+                }
+            }
+            catch(Exception e) {
+                Log.debug(e.getMessage());
+            }
+        }
+        Log.debug("minLength = " + minLength);
+        if(success) {
+            // combine video and audio pair and encode with x264/mp4
+            for(int i=0; i<videoInFiles.length; i++) {
+                String startHMS = secondsToHMS(startTimes[i]);
+                String endHMS = secondsToHMS(startTimes[i] + minLength);
+                Log.debug("startHMS = " + startHMS + ", endHMS = " + endHMS);
+                String command = "ffmpeg -i " + videoInFiles[i] + " -i " + audioOutFiles[i] + " -ss " + startHMS + " -to " + endHMS + " -c:v libx264 -c:a aac " + videoOutFiles[i];
+                Log.debug("executing " + command);
+                try {
+                    Process process = Runtime.getRuntime().exec(command);
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        Log.debug(line);
+                    }
+                    reader.close();
+                }
+                catch(Exception e) {
+                    Log.debug(e.getMessage());
+                }
+            }
+            // concatenate all video and audio files with offsets startTimes
+            // create list of files
+            String outFileName = videoSaveDir + String.format("%03d_", recordingId) + "combined.mp4";
+            try {
+                String[] inputs = new String[2*videoOutFiles.length];
+                for(int i=0; i<videoOutFiles.length; i++) {
+                    inputs[2*i] = "-i";
+                    inputs[2*i+1] = videoOutFiles[i].getAbsolutePath();
+                }
+                int n_players = playerVideoFileNames.length;
+                String layoutCommand = conductorCenterTopLayout(n_players);
+                String[] commands = new String[15 + inputs.length];
+                commands[0] = "ffmpeg";
+                commands[1] = "-y";
+                for(int i=0; i<inputs.length; i++) commands[2+i] = inputs[i];
+                commands[2+inputs.length] = "-filter_complex";
+                commands[3+inputs.length] = layoutCommand;
+                commands[4+inputs.length] = "-map";
+                commands[5+inputs.length] = "[vid]";
+                commands[6+inputs.length] = "-map";
+                commands[7+inputs.length] = "[aud]";
+                commands[8+inputs.length] = "-c:v";
+                commands[9+inputs.length] = "libx264";
+                commands[10+inputs.length] = "-c:a";
+                commands[11+inputs.length] = "aac";
+                commands[12+inputs.length] = "-crf";
+                commands[13+inputs.length] = "23";
+                commands[14+inputs.length] = outFileName;
+                for(int i=0; i<commands.length; i++) {
+                    Log.debug(commands[i]);
+                }
+                Process process = Runtime.getRuntime().exec(commands);
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    Log.debug(line);
+                }
+                reader.close();
+                Log.debug("synchronization done");
+            }
+            catch(Exception e) {
+                Log.debug(e.getMessage());
+            }
+        }
+    }
 
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 
@@ -276,23 +562,39 @@ public class SynchronizeVideos extends HttpServlet {
             JSONObject jsonResponse = new JSONObject();
 
             int port = Integer.parseInt(request.getParameter("port"));
-            String[] ids = request.getParameterValues("ids");
-            int n_players = ids.length;
-            Log.debug("port: " + port + ", n_players: " + n_players);
-            for(int i=0; i<ids.length; i++) {
-                Log.debug("id[" + i + "]: " + ids[i]);
+            Log.debug("port: " + port);
+            conductorId = request.getParameter("conductor");
+            recordingId = Integer.parseInt(request.getParameter("recording"));
+            Log.debug("conductor: " + conductorId);
+            String[] player_ids = request.getParameterValues("players");
+            int n_players = player_ids.length;
+            playerIds = new String[n_players];
+            for(int i=0; i<n_players; i++) {
+                playerIds[i] = player_ids[i];
+            }
+            Log.debug("n_players: " + n_players);
+            int n_files = 2 * (1 + n_players);
+            conductorVideoFileName = "";
+            conductorAudioFileName = "";
+            playerVideoFileNames = new String[n_players];
+            playerAudioFileNames = new String[n_players];
+            for(int i=0; i<playerIds.length; i++) {
+                Log.debug("player[" + i + "]: " + playerIds[i]);
             }
             Log.debug("creating server");
             // start a WebSocket server to receive video data
             ServerSocket server = new ServerSocket(port);
             int n_clients = 0;
-            while(n_clients < n_players) {
+            while(n_clients < n_files) {
                 Log.debug("waiting for connection no." + n_clients);
-                acceptWebSocketClient(server);
+                acceptWebSocketClient(server, n_clients);
                 n_clients++;
             }
             server.close();
             Log.debug("received from all players");
+
+            // process videos
+            synchronize();
 
 //            jsonResponse.put("sessionId", sessionId);
 //            String workerId = request.getParameter("workerId");
@@ -300,7 +602,7 @@ public class SynchronizeVideos extends HttpServlet {
             // Send the response
 //            out.write(jsonResponse.toString());
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.debug(e.getMessage());
         }
     }
 };

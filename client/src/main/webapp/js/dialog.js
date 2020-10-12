@@ -1,10 +1,14 @@
 'use strict';
 
-const videoSocketPort = 9000;
-const allVideosReadyEvent = new CustomEvent('all_videos_ready');
+const videoSocketPort = 9001;
+const allBlobsReadyEvent = new CustomEvent('all_blobs_ready');
 
 var localVideo;
-var localStream;
+var localAudio;
+var localVideoStream;
+var localAudioStream;
+var playAudioStream;
+var recordAudioStream;
 var socketId;
 var connections = [];
 var socket;
@@ -14,14 +18,19 @@ var conductor = false;
 var conductorId;
 
 var recording = false;
+var recordingId = 0;
 // only used by conductor
 var blobsToSend = [];
 // only used by players
-var localStreamRecorder;
-var localRecordedChunks = [];
-var conductorStream;
+var localVideoStreamRecorder;
+var localVideoRecordedChunks = [];
+var localAudioStreamRecorder;
+var localAudioRecordedChunks = [];
 
-var syncAudioTrackId;
+var playAudioContext;
+var recordAudioContext;
+var playAudioDestination;
+var recordAudioDestination;
 
 const textHeight = parseFloat(window.getComputedStyle(document.body).fontSize) + 10;
 const conductorViewPlayerVideoWidth = 100;
@@ -29,6 +38,22 @@ const conductorViewPlayerVideoHeight = 100;
 
 const constraints = {
     video: true,
+    audio: {
+        autoGainControl: false,
+        noiseSuppression: false,
+        echoCancellation: false,
+        latency: {ideal: 0.01, max: 0.1},
+        channelCount: {ideal: 2, min: 1}
+    }
+};
+
+const videoConstraints = {
+    video: true,
+    audio: false
+};
+
+const audioConstraints = {
+    video: false,
     audio: {
         autoGainControl: false,
         noiseSuppression: false,
@@ -72,7 +97,7 @@ function reset() {
             conductorStopRecording();
         }
         else {
-            playerStopRecording();
+            stopRecordingCommand();
         }
     }
 
@@ -81,7 +106,11 @@ function reset() {
     document.getElementById("joinButton").disabled = false;
     document.getElementById("leaveButton").disabled = true;
     localVideo = null;
-    localStream = null;
+    localAudio = null;
+    localVideoStream = null;
+    localAudioStream = null;
+    playAudioStream = null;
+    recordAudioStream = null;
     socketId = null;
     connections = [];
     socket = null;
@@ -90,10 +119,17 @@ function reset() {
     conductor = false;
     conductorId = null;
     recording = false;
+    recordingId = 0;
     blobsToSend = [];
-    localStreamRecorder = null;
-    localRecordedChunks = [];
-    conductorStream = null;
+    localVideoStreamRecorder = null;
+    localAudioStreamRecorder = null;
+    localVideoRecordedChunks = [];
+    localAudioRecordedChunks = [];
+
+    playAudioContext = null;
+    recordAudioContext = null;
+    playAudioDestination = null;
+    recordAudioDestination = null;
 }
 
 function gotMessageFromServer(fromId, message) {
@@ -127,10 +163,6 @@ function gotMessageFromServer(fromId, message) {
                     conductorId = fromId;
                 }
             }
-        }
-        if(signal.sync) {
-            syncAudioTrackId = signal.sync;
-            console.log("syncAudioTrackId: ", syncAudioTrackId);
         }
         if(signal.sdp) {
             connections[fromId].setRemoteDescription(new RTCSessionDescription(signal.sdp)).then(function() {
@@ -181,6 +213,24 @@ function conductorStartRecording() {
     // TODO: mute all videos
     recording = true;
 
+    // add oscillation
+    console.log("currentTime = ", recordAudioContext.currentTime);
+
+    // create oscillator and connect to both streams
+    var playOscillator = playAudioContext.createOscillator();
+    playOscillator.type = "sine";
+    playOscillator.connect(playAudioDestination);
+    var recordOscillator = recordAudioContext.createOscillator();
+    recordOscillator.type = "sine";
+    recordOscillator.connect(recordAudioDestination);
+
+    playOscillator.frequency.value = 440;
+    recordOscillator.frequency.value = 440;
+    playOscillator.start();
+    recordOscillator.start();
+    playOscillator.stop(playAudioContext.currentTime + 2.0);
+    recordOscillator.stop(recordAudioContext.currentTime + 2.0);
+
     // set up the event to notify that all videos are ready for sending to servlet
     var dummyDiv = document.getElementById("dummyDiv");
     if(dummyDiv == null) {
@@ -188,42 +238,74 @@ function conductorStartRecording() {
         dummyDiv.id = "dummyDiv";
         document.body.appendChild(dummyDiv);
     }
-    dummyDiv.addEventListener('all_videos_ready', sendBlobsToServlet);
+    dummyDiv.addEventListener('all_blobs_ready', sendBlobsToServlet);
     // record local stream
-    const options = {mimeType: 'video/webm'};
-    localStreamRecorder = new MediaRecorder(localStream, options);
-    localStreamRecorder.addEventListener('dataavailable', function(e) {
+    localVideoStreamRecorder = new MediaRecorder(localVideoStream, {mimeType: 'video/webm'});
+    localAudioStreamRecorder = new MediaRecorder(recordAudioStream, {mimeType: 'audio/webm'});
+    localVideoRecordedChunks = [];
+    localAudioRecordedChunks = [];
+    localVideoStreamRecorder.addEventListener('dataavailable', function(e) {
         if(e.data.size > 0) {
-            localRecordedChunks.push(e.data);
+            localVideoRecordedChunks.push(e.data);
         }
     });
-    localStreamRecorder.addEventListener('stop', function() {
-        blobsToSend[socketId] = new Blob(localRecordedChunks);
-        console.log("conductor video size: ", blobsToSend[socketId].size);
-        if(Object.keys(blobsToSend).length == Object.keys(connections).length) {
-            console.log("all videos are ready (1): ", Object.keys(blobsToSend).length);
+    localAudioStreamRecorder.addEventListener('dataavailable', function(e) {
+        if(e.data.size > 0) {
+            localAudioRecordedChunks.push(e.data);
+        }
+    });
+    localVideoStreamRecorder.addEventListener('stop', function() {
+        var key = socketId + "_video";
+        blobsToSend[key] = new Blob(localVideoRecordedChunks);
+        console.log("conductor video size: ", blobsToSend[key].size);
+        if(Object.keys(blobsToSend).length == 2 * Object.keys(connections).length) {
+            console.log("all blobs are ready (1): ", Object.keys(blobsToSend).length);
             var dummyDiv = document.getElementById("dummyDiv");
-            dummyDiv.dispatchEvent(allVideosReadyEvent);
+            dummyDiv.dispatchEvent(allBlobsReadyEvent);
         }
     });
-    localStreamRecorder.start();
+    localAudioStreamRecorder.addEventListener('stop', function() {
+        var key = socketId + "_audio";
+        blobsToSend[key] = new Blob(localAudioRecordedChunks);
+        console.log("conductor audio size: ", blobsToSend[key].size);
+        if(Object.keys(blobsToSend).length == 2 * Object.keys(connections).length) {
+            console.log("all blobs are ready (2): ", Object.keys(blobsToSend).length);
+            var dummyDiv = document.getElementById("dummyDiv");
+            dummyDiv.dispatchEvent(allBlobsReadyEvent);
+        }
+    });
+    localVideoStreamRecorder.start();
+    localAudioStreamRecorder.start();
 }
 
 function conductorStopRecording() {
     recording = false;
     // stop recording
-    localStreamRecorder.stop();
+    localVideoStreamRecorder.stop();
+    localAudioStreamRecorder.stop();
     // TODO: stop indicating recording
     // TODO: unmute all videos
 }
 
 function receiveLocalVideo(fromId, buffer) {
-    blobsToSend[fromId] = new Blob([buffer], {type: 'video/webm'});
-    console.log("received local video from ", fromId, ": size = ", blobsToSend[fromId].size);
-    if(Object.keys(blobsToSend).length == Object.keys(connections).length) {
-        console.log("all videos are ready (2): ", Object.keys(blobsToSend).length);
+    var key = fromId + "_video";
+    blobsToSend[key] = new Blob([buffer], {type: 'video/webm'});
+    console.log("received local video from ", fromId, ": size = ", blobsToSend[key].size);
+    if(Object.keys(blobsToSend).length == 2 * Object.keys(connections).length) {
+        console.log("all blobs are ready (3): ", Object.keys(blobsToSend).length);
         var dummyDiv = document.getElementById("dummyDiv");
-        dummyDiv.dispatchEvent(allVideosReadyEvent);
+        dummyDiv.dispatchEvent(allBlobsReadyEvent);
+    }
+}
+
+function receiveLocalAudio(fromId, buffer) {
+    var key = fromId + "_audio";
+    blobsToSend[key] = new Blob([buffer], {type: 'audio/webm'});
+    console.log("received local audio from ", fromId, ": size = ", blobsToSend[key].size);
+    if(Object.keys(blobsToSend).length == 2 * Object.keys(connections).length) {
+        console.log("all blobs are ready (4): ", Object.keys(blobsToSend).length);
+        var dummyDiv = document.getElementById("dummyDiv");
+        dummyDiv.dispatchEvent(allBlobsReadyEvent);
     }
 }
 
@@ -235,34 +317,53 @@ function sendBlobsToServlet() {
 }
 
 function sendBlobToServlet(index) {
-    var ids = Object.keys(blobsToSend);
-    if(index >= ids.length) return;
+    var keys = Object.keys(blobsToSend);
+    if(index >= keys.length) {
+        var dummyDiv = document.getElementById("dummyDiv");
+        dummyDiv.parentElement.removeChild(dummyDiv);
+        blobsToSend = [];
+        recordingId = recordingId + 1;
+        return;
+    }
     console.log("sendBlobToServlet(", index, ")");
     var ws_url = "ws://localhost:" + videoSocketPort;
-    var type = null;
+    var role = null;
     var name = null;
+    var media = null;
+    var id = null;
+    var n = keys[index].search("_video");
+    if(n >= 0) {
+        id = keys[index].substring(0, n);
+        media = "video";
+    }
+    else {
+        n = keys[index].search("_audio");
+        id = keys[index].substring(0, n);
+        media = "audio";
+    }
     // conductor
-    if(ids[index] == socketId) {
-        type = 'conductor';
+    if(keys[index].search(socketId) >= 0) {
+        role = 'conductor';
         name = localName;
     }
     else {
-        type = 'player';
-        name = names[ids[index]];
+        role = 'player';
+        name = names[id];
     }
-    console.log("sending blob from ", ids[index], ": type = ", type, ", name = ", name, ", size = ", blobsToSend[ids[index]].size);
+    console.log("sending blob from ", id, ": media = ", media, ", role = ", role, ", name = ", name, ", size = ", blobsToSend[keys[index]].size);
     var ws = new WebSocket(ws_url);
     console.log("websocket created");
     ws.addEventListener('open', function(event) {
         console.log("opened");
         var msg = {
             name: name,
-            id: ids[index],
-            type: type,
+            id: id,
+            role: role,
+            media: media,
         };
         ws.send(JSON.stringify(msg));
 
-        blobsToSend[ids[index]].arrayBuffer().then(function(buffer) {
+        blobsToSend[keys[index]].arrayBuffer().then(function(buffer) {
             var view = new Uint8Array(buffer);
             console.log("sending view ...");
             ws.send(view);
@@ -276,14 +377,19 @@ function sendBlobToServlet(index) {
 
 function synchronizeVideos() {
     var ids = Object.keys(connections);
-    console.log("synchronizeVideos: ", videoSocketPort, ", ", Object.keys(connections).length, ", ", ids);
+    var n = ids.lastIndexOf(conductorId);
+    ids.splice(n, 1);
+
+    console.log("synchronizeVideos: ", videoSocketPort, ", ", conductorId, ", ", ids);
     $.ajax({
         type: "POST",
         url: "synchronize_videos",
         traditional: true,
         data: {
             port: videoSocketPort,
-            ids: ids,
+            conductor: conductorId,
+            players: ids,
+            recording: recordingId,
         },
 
         async: true,
@@ -297,48 +403,46 @@ function synchronizeVideos() {
 }
 
 // for players
-// 1. Add syncAudioTrack to local stream if it doesn't have yet
-// 2. Record local stream
-// 3. Send the recorded blob to conductor via socket
 function playerStartRecording() {
-    const options = {mimeType: 'video/webm'};
-    localStreamRecorder = new MediaRecorder(localStream, options);
+    localVideoStreamRecorder = new MediaRecorder(localVideoStream, {mimeType: 'video/webm'});
+    localAudioStreamRecorder = new MediaRecorder(recordAudioStream, {mimeType: 'audio/webm'});
+    localVideoRecordedChunks = [];
+    localAudioRecordedChunks = [];
 
-    // 1. Add syncAudioTrack to local stream if it doesn't have yet
-    var localAudioTracks = localStream.getAudioTracks();
-    var conductorAudioTracks = conductorStream.getAudioTracks();
-    for(var i=0; i<conductorAudioTracks.length; i++) {
-        if(conductorAudioTracks[i].id == syncAudioTrackId) {
-            if(localStream.getTrackById(syncAudioTrackId) == null) {
-                var orgTracks = localStream.getAudioTracks();
-                // copy the track to local video
-                localStream.addTrack(conductorAudioTracks[i]);
-                var newTracks = localStream.getAudioTracks();
-                console.log("local audio track size: org = ", orgTracks.length, ", new = ", newTracks.length);
-            }
-        }
-    }
-
-    // 2. Record local stream
-    localStreamRecorder.addEventListener('dataavailable', function(e) {
+    localVideoStreamRecorder.addEventListener('dataavailable', function(e) {
         if(e.data.size > 0) {
-            localRecordedChunks.push(e.data);
+            localVideoRecordedChunks.push(e.data);
+        }
+    });
+    localAudioStreamRecorder.addEventListener('dataavailable', function(e) {
+        if(e.data.size > 0) {
+            localAudioRecordedChunks.push(e.data);
         }
     });
 
-    // 3. Send the recorded blob to conductor via socket
-    localStreamRecorder.addEventListener('stop', function() {
-        var blob = new Blob(localRecordedChunks);
+    localVideoStreamRecorder.addEventListener('stop', function() {
+        var blob = new Blob(localVideoRecordedChunks);
         // send through socket
-        console.log("sending local blob of size ", blob.size, " ...");
+        console.log("sending local video of size ", blob.size, " ...");
         blob.arrayBuffer().then(function(buffer) {
             console.log("buffer size: ", buffer.byteLength);
-            socket.emit('local-blob', conductorId, buffer)
+            socket.emit('video-blob', conductorId, buffer)
         });
-        console.log("local done");
+        console.log("video done");
+    });
+    localAudioStreamRecorder.addEventListener('stop', function() {
+        var blob = new Blob(localAudioRecordedChunks);
+        // send through socket
+        console.log("sending local audio of size ", blob.size, " ...");
+        blob.arrayBuffer().then(function(buffer) {
+            console.log("buffer size: ", buffer.byteLength);
+            socket.emit('audio-blob', conductorId, buffer)
+        });
+        console.log("audio done");
     });
 
-    localStreamRecorder.start();
+    localVideoStreamRecorder.start();
+    localAudioStreamRecorder.start();
 }
 
 function startRecordingCommand() {
@@ -351,26 +455,23 @@ function startRecordingCommand() {
 function stopRecordingCommand() {
     recording = false;
     // stop recording
-    localStreamRecorder.stop();
+    localVideoStreamRecorder.stop();
+    localAudioStreamRecorder.stop();
     // TODO: stop indicating recording
     // TODO: unmute all videos
-}
-
-function instantReplay(video, blob) {
-    video.srcObject = null;
-    video.src = URL.createObjectURL(blob);
-    video.autoplay    = false;
-    video.muted       = false;
-    video.playsinline = true;
-    video.controls    = true;
 }
 
 function startSession() {
 }
 
 function leave() {
-    if(localStream) {
-        localStream.getTracks().forEach(function(track) {
+    if(localVideoStream) {
+        localVideoStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+    }
+    if(localAudioStream) {
+        localAudioStream.getTracks().forEach(function(track) {
             track.stop();
         });
     }
@@ -419,6 +520,7 @@ function join() {
         document.getElementById("joinButton").disabled = true;
         document.getElementById("leaveButton").disabled = false;
 
+        localAudio = document.getElementById("localAudio");
         if(conductor) {
             localVideo = document.getElementById("conductorViewLocalVideo");
         }
@@ -428,8 +530,8 @@ function join() {
         localVideo.oncanplay = setupSocket;
         async function startStream() {
             try {
-                const promise = await navigator.mediaDevices.getUserMedia(constraints);
-                getUserMediaSuccess(promise);
+                const stream = await navigator.mediaDevices.getUserMedia(videoConstraints);
+                getUserMediaSuccess(stream);
             }
             catch(e) {
                 console.log("getUserMedia failed: " + e);
@@ -437,32 +539,35 @@ function join() {
         }
 
         function getUserMediaSuccess(stream) {
-            localStream = stream;
-            var parent_div = localVideo.parentElement;
-            var div_height = parent_div.getBoundingClientRect().height - textHeight;
-            var div_width = parent_div.getBoundingClientRect().width;
-            set_video_size(div_width, div_height, localVideo);
-            localVideo.srcObject = stream;
-            if(conductor) {
-                document.getElementById("conductorViewLocalNameDiv").innerHTML = localName;
-                // add audio stream for sync
-                var audioContext = new AudioContext();
-//                var oscillator = audioContext.createOscillator();
-//                oscillator.frequency.value = 110;
-                var streamAudioDestination = audioContext.createMediaStreamDestination();
-//                oscillator.connect(streamAudioDestination);
-//                oscillator.start();
-                // add audio track from audiocontext
-                var audioStream = streamAudioDestination.stream;
-                var audioTracks = audioStream.getAudioTracks();
-                var firstAudioTrack = audioTracks[0];
-                console.log("new track id: ", firstAudioTrack.id);
-                stream.addTrack(firstAudioTrack);
-                syncAudioTrackId = firstAudioTrack.id;
-            }
-            else {
-                document.getElementById("playerViewLocalNameDiv").innerHTML = localName;
-            }
+            localVideoStream = stream;
+            navigator.mediaDevices.getUserMedia(audioConstraints).then(function(audioStream) {
+                var parent_div = localVideo.parentElement;
+                var div_height = parent_div.getBoundingClientRect().height - textHeight;
+                var div_width = parent_div.getBoundingClientRect().width;
+                set_video_size(div_width, div_height, localVideo);
+                localVideo.srcObject = stream;
+
+                localAudioStream = audioStream;
+                // AudioContexts and destinations for played and recorded streams
+                playAudioContext = new AudioContext();
+                recordAudioContext = new AudioContext();
+                playAudioDestination = playAudioContext.createMediaStreamDestination();
+                recordAudioDestination = recordAudioContext.createMediaStreamDestination();
+
+                // localAudioStream goes to record
+                var localAudioSource = recordAudioContext.createMediaStreamSource(localAudioStream);
+                localAudioSource.connect(recordAudioDestination);
+
+                if(conductor) {
+                    document.getElementById("conductorViewLocalNameDiv").innerHTML = localName;
+                }
+                else {
+                    document.getElementById("playerViewLocalNameDiv").innerHTML = localName;
+                }
+                localAudio.srcObject = playAudioDestination.stream;
+                playAudioStream = playAudioDestination.stream;
+                recordAudioStream = recordAudioDestination.stream;
+            });
         }
 
         function setupSocket() {
@@ -470,7 +575,8 @@ function join() {
 //            socket = io.connect(config.host, {rejectUnauthorized: false, secure: true});
             socket.on('signal', gotMessageFromServer);
             socket.on('connect', onConnect);
-            socket.on('local-blob', receiveLocalVideo);
+            socket.on('video-blob', receiveLocalVideo);
+            socket.on('audio-blob', receiveLocalAudio);
 
             function onConnect() {
                 socketId = socket.id;
@@ -500,19 +606,19 @@ function join() {
                                 gotRemoteStream(event, socketListId)
                             }
                             //Add the local video stream
-                            connections[socketListId].addStream(localStream);
+                            connections[socketListId].addStream(localVideoStream);
                             //send local name
                             socket.emit('signal', socketListId, JSON.stringify({'name': localName}));
                             // send conductor
                             if(conductor) {
                                 socket.emit('signal', socketListId, JSON.stringify({'conductor': 'true'}));
-                                // let everyone know syncAudioTrackId
-                                Object.keys(connections).forEach(function(socketListId) {
-                                    socket.emit('signal', socketListId, JSON.stringify({'sync': syncAudioTrackId}));
-                                });
+                                // conductor sends recordAudioStream (=local+sync)
+                                connections[socketListId].addStream(recordAudioStream);
                             }
                             else {
                                 socket.emit('signal', socketListId, JSON.stringify({'conductor': 'false'}));
+                                // players send localAudioStream
+                                connections[socketListId].addStream(localAudioStream);
                             }
                         }
                     });
@@ -530,6 +636,37 @@ function join() {
 
         function gotRemoteStream(event, id) {
             console.log("gotRemoteStream: " + event + ", " + id);
+            // process audio stream
+            if(event.stream.getVideoTracks().length == 0) {
+                if(id == conductorId) {
+                    // add conductor's audio (record) stream to record
+                    var raudioNode = new Audio();
+                    raudioNode.srcObject = event.stream;
+                    var rgainNode = recordAudioContext.createGain();
+                    rgainNode.gain.value = 0.1;  // reduce gain for record
+                    raudioNode.onloadedmetadata = function() {
+                        var raudioSource = recordAudioContext.createMediaStreamSource(raudioNode.srcObject);
+                        raudioNode.play();
+                        raudioSource.connect(rgainNode);
+                        rgainNode.connect(recordAudioDestination);
+                    }
+                }
+                {
+                    // add everything including conductor's to playAudio
+                    var audioNode = new Audio();
+                    audioNode.srcObject = event.stream;
+                    var gainNode = playAudioContext.createGain();
+                    gainNode.gain.value = 1.0;
+                    audioNode.onloadedmetadata = function() {
+                        var audioSource = playAudioContext.createMediaStreamSource(audioNode.srcObject);
+                        audioNode.play();
+                        audioSource.connect(gainNode);
+                        gainNode.connect(playAudioDestination);
+                    }
+                }
+                return;
+            }
+
             // create the video and surrounding divs
             var video = document.createElement('video');
             var div = document.createElement('div');
@@ -556,7 +693,6 @@ function join() {
                     var p_height = parent_div.getBoundingClientRect().height - textHeight;
                     var p_width = parent_div.getBoundingClientRect().width;
                     set_video_size(p_width, p_height, video);
-                    conductorStream = event.stream;
                 }
                 else {
                     video.className = 'playerViewPlayerVideo';
