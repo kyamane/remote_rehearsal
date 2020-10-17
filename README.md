@@ -24,8 +24,7 @@ $ node app.js
 ```
 
 ### Client
-Tested with Chrome Version 85.0.4183.102 (Official Build) on Ubuntu 18.04 / Windows 10 / Mac OS 10.
-Currently uses JavaScript and HTML only.
+Tested with Chrome Version 85.0.4183.102 (Official Build) on Ubuntu 18.04 / Windows 10 / Mac OS 10 and [Apache Tomcat](http://tomcat.apache.org/) 9.0.38 running on Ubuntu 18.04. Currently uses Java Servlet, JavaScript and HTML.
 
 The main html file is [client/src/main/webapp/index.html](https://github.com/kyamane/remote_rehearsal/blob/main/client/src/main/webapp/index.html).
 The easiest way to build and deploy the client is to use gradle and tomcat.
