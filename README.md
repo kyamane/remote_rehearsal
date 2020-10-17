@@ -45,6 +45,38 @@ Note that the behavior in case multiple conductors exist in the rehearsal is und
 1. The conductor interface inlcudes a "Record" button. By pressing this button, you can record all player video/audio and generate a synchronized video.
 1. Click "Leave" to leave the rehearsal.
 
+## Video Sync Details
+
+Videos are synchronized using a sync sound added to the conductor's audio signal. The sync sound is a simple oscillation that lasts 2 seconds after the "record" button is clicked.
+
+### Audio Played
+
+Everyone hears everyone else's  audio stream, including the sync sound.
+
+Role\Input | Conductor | Sync | Player *i* | Player *j* (<>*i*)
+-----------|-----------|------|------------|------------------
+Conductor | No | Yes | Yes | Yes
+Player *i* | Yes | Yes | No | Yes
+Player *j* | Yes | Yes | Yes | No
+
+### Audio Recorded
+
+The local and conductor (including sync sound) audio streams are recorded. The sync sound is used for synchronizing the videos with possibly different delays.
+
+Role\Input | Conductor | Sync | Player *i* | Player *j* (<>*i*)
+-----------|-----------|------|------------|------------------
+Conductor | Yes | Yes | No | No
+Player *i* | Yes | Yes | Yes | No
+Player *j* | Yes | Yes | No | Yes
+
+### Data processing
+
+1. The players' video and audio streams are sent to the conductor's local machine via the socket server.
+1. The video and audio data are sent to the Java servlet via WebSocket.
+1. The Java servlet looks for the sync sound in each audio data and determines the delay of each player's video and audio.
+1. The video and audio data are merged using [ffmpeg](https://ffmpeg.org/).
+
 ## Future Plan
+- [ ] Turn on/off audio of individual player
 - [ ] In the conductor view, arrange the player videos in the standard orchestra layout.
 - [ ] Conductor movement prediction: 1) build a (DNN?) model of conductor movement, perhaps using data from skeleton tracking with Azure Kinect; 2) learn a model to reconstruct conductor appearance from skeleton movement; 3) during rehearsal, show the conductor movement 2T seconds ahead of real time to the players, where T is the one-way latency between the conductor and players. Theoretically, the conductor should hear the sound like in an in-person rehearsal.
