@@ -1,6 +1,7 @@
 package com.remote.rehearsal;
 
 import java.lang.Math;
+import java.lang.System;
 import java.io.*;
 import java.net.*;
 import java.util.ArrayList;
@@ -46,6 +47,7 @@ public class SynchronizeVideos extends HttpServlet {
     String[] playerIds;
     String[] playerVideoFileNames;
     String[] playerAudioFileNames;
+    String combinedFileName;
 
     public SynchronizeVideos() {
         super();
@@ -130,16 +132,17 @@ public class SynchronizeVideos extends HttpServlet {
         return unmasked;
     }
 
-    private void unmaskAndWrite(int index, OutputStream os, byte[] bytes, byte[] masks, int from_index, int to_index) {
+    private void unmaskAndWrite(int index, OutputStream os, byte[] bytes, byte[] masks, int from_index, int to_index) throws Exception {
         try {
             byte[] unmasked = unmask(index, bytes, masks, from_index, to_index);
             os.write(unmasked);
         } catch(Exception e) {
             Log.debug(e.getMessage());
+            throw e;
         }
     }
 
-    private long readVideoData(InputStream in, OutputStream os) {
+    private long readVideoData(InputStream in, OutputStream os) throws Exception {
         byte[] bytes = new byte [4096];
         byte[] masks = new byte [4];
         long total_fragment_read = 0; // fragment read so far
@@ -219,11 +222,12 @@ public class SynchronizeVideos extends HttpServlet {
             }
         } catch(Exception e) {
             Log.debug(e.getMessage());
+            throw e;
         }
         return total_payload_read;
     }
 
-    private void acceptWebSocketClient(ServerSocket server, int index) {
+    private Socket acceptWebSocketClient(ServerSocket server) throws Exception {
         try {
             Socket client = server.accept();
             Log.debug("client connected");
@@ -242,66 +246,90 @@ public class SynchronizeVideos extends HttpServlet {
                                    + Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((match.group(1) + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").getBytes("UTF-8")))
                                    + "\r\n\r\n").getBytes("UTF-8");
                 out.write(response, 0, response.length);
-
-                // receive JSON format message contating name, id and video type
-                byte[] bytes = new byte [256];
-                byte[] masks = new byte [4];
-                long nbytes = 0;  // each chunk
-                long fragment_size = 0;
-                Boolean[] valid_fragment = new Boolean[1];
-                Boolean[] final_fragment = new Boolean[1];
-                int[] header_size = new int[1];
-                nbytes = in.read(bytes);
-                fragment_size = analyzeHeader(bytes, valid_fragment, final_fragment, masks, header_size);
-                byte[] b_msg = unmask(0, bytes, masks, header_size[0], (int)fragment_size);
-                String msg = new String(b_msg, StandardCharsets.UTF_8);
-                JSONObject json_object = new JSONObject(msg);
-                String name = json_object.getString("name").replace(' ', '_');
-                String id = json_object.getString("id");
-                String role = json_object.getString("role");
-                String media = json_object.getString("media");
-                Log.debug("name: " + name + ", id: " + id + ", role: " + role + ", media: " + media);
-
-                String ext;
-                if(media.equals("video")) ext = ".webm";
-                else ext = ".weba";
-                String filename = new String(String.format("%03d_", recordingId) + role + "_" + name + "_" + id + "_" + media + ext);
-                File file = new File(videoSaveDir + filename);
-                if(role.equals("conductor")) {
-                    if(media.equals("video")) {
-                        conductorVideoFileName = filename;
-                    }
-                    else {
-                        conductorAudioFileName = filename;
-                    }
-                }
-                else {
-                    int count = -1;
-                    for(int i=0; i<playerIds.length; i++) {
-                        if(playerIds[i].equals(id)) {
-                            count = i;
-                            break;
-                        }
-                    }
-                    if(media.equals("video")) {
-                        playerVideoFileNames[count] = filename;
-                    }
-                    else {
-                        playerAudioFileNames[count] = filename;
-                    }
-                }
-                OutputStream os = new FileOutputStream(file, false);
-                // now receive the video data
-                long total_payload_read = readVideoData(in, os);
-                Log.debug("total_payload_read = " + total_payload_read);
-                os.close();
+                return client;
+            }
+            else {
+                throw new Exception("client is not following the WebSocket protocol");
             }
         } catch(Exception e) {
+            Log.debug(e.getMessage());
+            throw e;
+        }
+    }
+
+    private void readMediaFiles(Socket client) throws Exception {
+        try {
+            InputStream in = client.getInputStream();
+            // receive JSON format message contating name, id and video type
+            byte[] bytes = new byte [256];
+            byte[] masks = new byte [4];
+            long nbytes = 0;  // each chunk
+            long fragment_size = 0;
+            Boolean[] valid_fragment = new Boolean[1];
+            Boolean[] final_fragment = new Boolean[1];
+            int[] header_size = new int[1];
+            nbytes = in.read(bytes);
+            fragment_size = analyzeHeader(bytes, valid_fragment, final_fragment, masks, header_size);
+            byte[] b_msg = unmask(0, bytes, masks, header_size[0], (int)fragment_size);
+            String msg = new String(b_msg, StandardCharsets.UTF_8);
+            JSONObject json_object = new JSONObject(msg);
+            String name = json_object.getString("name").replace(' ', '_');
+            String id = json_object.getString("id");
+            String role = json_object.getString("role");
+            String media = json_object.getString("media");
+            if(name.length() == 0 || id.length() == 0 || role.length() == 0 || media.length() == 0) {
+                throw new Exception("clip information is missing");
+            }
+            Log.debug("name: " + name + ", id: " + id + ", role: " + role + ", media: " + media);
+
+            String ext;
+            if(media.equals("video")) ext = ".webm";
+            else ext = ".weba";
+            String filename = new String(String.format("%03d_", recordingId) + role + "_" + name + "_" + id + "_" + media + ext);
+            File file = new File(videoSaveDir + filename);
+            if(role.equals("conductor")) {
+                if(media.equals("video")) {
+                    conductorVideoFileName = filename;
+                }
+                else {
+                    conductorAudioFileName = filename;
+                }
+            }
+            else {
+                int count = -1;
+                for(int i=0; i<playerIds.length; i++) {
+                    if(playerIds[i].equals(id)) {
+                        count = i;
+                        break;
+                    }
+                }
+                if(media.equals("video")) {
+                    playerVideoFileNames[count] = filename;
+                }
+                else {
+                    playerAudioFileNames[count] = filename;
+                }
+            }
+            OutputStream os = new FileOutputStream(file, false);
+            // now receive the video data
+            try {
+                long total_payload_read = readVideoData(in, os);
+                Log.debug("total_payload_read = " + total_payload_read);
+                in.close();
+                os.close();
+            }
+            catch(Exception e) {
+                in.close();
+                os.close();
+                throw new Exception("exception while receiving video data");
+            }
+        }
+        catch(Exception e) {
             Log.debug(e.getMessage());
         }
     }
 
-    protected double calcCorrelation(double[] d1, double[] d2) {
+    private double calcCorrelation(double[] d1, double[] d2) {
         int n = d1.length;
         double d1sum = 0.0, d2sum = 0.0;
         double d1sqsum = 0.0, d2sqsum = 0.0;
@@ -316,7 +344,7 @@ public class SynchronizeVideos extends HttpServlet {
         return (n*d12sum - d1sum*d2sum)/Math.sqrt((n*d1sqsum-d1sum*d1sum)*(n*d2sqsum-d2sum*d2sum));
     }
 
-    protected String secondsToHMS(double secs) {
+    private String secondsToHMS(double secs) {
         long msecs = (long)(secs * 1000);
         long hours = TimeUnit.MILLISECONDS.toHours(msecs);
         msecs -= TimeUnit.HOURS.toMillis(hours);
@@ -328,7 +356,7 @@ public class SynchronizeVideos extends HttpServlet {
     }
 
     // place conductor at the center of the top row
-    protected String conductorCenterTopLayout(int n_players) {
+    private String conductorCenterTopLayout(int n_players) {
         // find number of rows/cols
         int nCols = 0;
         for(int i=2; ; i++) {
@@ -350,7 +378,7 @@ public class SynchronizeVideos extends HttpServlet {
             else if(col > 1) colString = new String(col + "*W/" + nCols);
             String rowString = new String("H/" + nCols);
             if(row != 1) rowString = new String(row + "*H/" + nCols);
-            cmd = cmd + "[int];[int][" + (i+1) + ":v]overlay=" + colString + ":" + rowString;
+            cmd = cmd + "[int" + i + "];[int" + i + "][" + (i+1) + ":v]overlay=" + colString + ":" + rowString;
         }
         cmd = cmd + "[vid];";
         // audio including conductor's
@@ -361,7 +389,7 @@ public class SynchronizeVideos extends HttpServlet {
         return cmd;
     }
 
-    protected void synchronize() {
+    private void synchronize() throws Exception {
         // convert all audio files to wav with the same sampling rate
         File[] videoInFiles = new File[playerIds.length + 1];
         File[] audioInFiles = new File[playerIds.length + 1];
@@ -381,10 +409,6 @@ public class SynchronizeVideos extends HttpServlet {
             String apath = audioInFiles[i].getAbsolutePath();
             int aext = apath.lastIndexOf('.');
             audioOutFiles[i] = new File(apath.substring(0, aext) + ".wav");
-            // jave2 encode() function appends audio, so delete
-            if(audioOutFiles[i].exists() && audioOutFiles[i].delete()) {
-                Log.debug(audioOutFiles[i].getName() + " deleted");
-            }
             try {
                 // audio: wav
                 {
@@ -409,6 +433,7 @@ public class SynchronizeVideos extends HttpServlet {
             }
             catch(Exception e) {
                 Log.debug(e.getMessage());
+                throw e;
             }
         }
         // generate reference signal of 440Hz sine wave
@@ -475,10 +500,12 @@ public class SynchronizeVideos extends HttpServlet {
                 if(startTimes[i] < 0.1) {
                     Log.debug("sync failed");
                     success = false;
+                    throw new Exception("sync sound not found in " + audioOutFiles[i].getName());
                 }
             }
             catch(Exception e) {
                 Log.debug(e.getMessage());
+                throw e;
             }
         }
         Log.debug("minLength = " + minLength);
@@ -501,11 +528,12 @@ public class SynchronizeVideos extends HttpServlet {
                 }
                 catch(Exception e) {
                     Log.debug(e.getMessage());
+                    throw e;
                 }
             }
             // concatenate all video and audio files with offsets startTimes
             // create list of files
-            String outFileName = videoSaveDir + String.format("%03d_", recordingId) + "combined.mp4";
+            combinedFileName = videoSaveDir + String.format("%03d_", recordingId) + "combined.mp4";
             try {
                 String[] inputs = new String[2*videoOutFiles.length];
                 for(int i=0; i<videoOutFiles.length; i++) {
@@ -530,7 +558,7 @@ public class SynchronizeVideos extends HttpServlet {
                 commands[11+inputs.length] = "aac";
                 commands[12+inputs.length] = "-crf";
                 commands[13+inputs.length] = "23";
-                commands[14+inputs.length] = outFileName;
+                commands[14+inputs.length] = combinedFileName;
                 for(int i=0; i<commands.length; i++) {
                     Log.debug(commands[i]);
                 }
@@ -545,7 +573,78 @@ public class SynchronizeVideos extends HttpServlet {
             }
             catch(Exception e) {
                 Log.debug(e.getMessage());
+                throw e;
             }
+        }
+    }
+
+    private void sendCombinedVideo(Socket client) throws Exception {
+        try {
+            OutputStream out = client.getOutputStream();
+
+            Log.debug("sending " + combinedFileName);
+            File mediaFile = new File(combinedFileName);
+            BufferedInputStream stream = new BufferedInputStream(new FileInputStream(mediaFile));
+            byte[] payload = new byte[8092];
+            int readBytes = 0;
+            byte[] bMaxShort  = {0, 0, (byte)0xff, (byte)0xff};
+            ByteBuffer wrapped = ByteBuffer.wrap(bMaxShort);
+            int maxShort = (int)(wrapped.getInt());
+            byte[] header;
+            boolean firstChunk = true;
+            while((readBytes = stream.read(payload)) != -1) {
+                // create a payload
+                // header
+                if(readBytes < 126) {
+                    header = new byte[2];
+                    if(firstChunk) header[0] = (byte)0x02;
+                    else header[0] = (byte)0x00;
+                    // no masking possible since this is from server to client
+                    header[1] = (byte)readBytes;
+                }
+                else if(readBytes < maxShort) {
+                    header = new byte[4];
+                    if(firstChunk) header[0] = (byte)0x02;
+                    else header[0] = (byte)0x00;
+                    // no masking possible since this is from server to client
+                    header[1] = (byte)126;
+                    byte[] sizeBytes = ByteBuffer.allocate(4).putInt(readBytes).array();
+                    header[2] = sizeBytes[2];
+                    header[3] = sizeBytes[3];
+                }
+                else {
+                    header = new byte[10];
+                    if(firstChunk) header[0] = (byte)0x02;
+                    else header[0] = (byte)0x00;
+                    // no masking possible since this is from server to client
+                    header[1] = (byte)127;
+                    byte[] sizeBytes = ByteBuffer.allocate(8).putLong((long)readBytes).array();
+                    header[2] = sizeBytes[0];
+                    header[3] = sizeBytes[1];
+                    header[4] = sizeBytes[2];
+                    header[5] = sizeBytes[3];
+                    header[6] = sizeBytes[4];
+                    header[7] = sizeBytes[5];
+                    header[8] = sizeBytes[6];
+                    header[9] = sizeBytes[7];
+                }
+                firstChunk = false;
+                byte[] message = new byte[header.length + readBytes];
+                System.arraycopy(header, 0, message, 0, header.length);
+                System.arraycopy(payload, 0, message, header.length, readBytes);
+                out.write(message, 0, header.length + readBytes);
+                Log.debug(readBytes + " bytes sent");
+            }
+            // send the final chunk
+            header = new byte[2];
+            header[0] = (byte)0x80;
+            header[1] = (byte)0;
+            out.write(header, 0, header.length);
+            out.close();
+        }
+        catch(Exception e) {
+            Log.debug(e.getMessage());
+            throw e;
         }
     }
 
@@ -555,11 +654,17 @@ public class SynchronizeVideos extends HttpServlet {
         response.setCharacterEncoding("UTF-8");
         PrintWriter out = response.getWriter();
 
+        conductorId = "";
+        conductorVideoFileName = "";
+        conductorAudioFileName = "";
+        playerIds = null;
+        playerVideoFileNames = null;
+        playerAudioFileNames = null;
+        combinedFileName = "";
+
         BufferedOutputStream out_stream;
         try {
             Log.debug("synchronizing videos");
-            HttpSession session = request.getSession();
-            JSONObject jsonResponse = new JSONObject();
 
             int port = Integer.parseInt(request.getParameter("port"));
             Log.debug("port: " + port);
@@ -587,22 +692,47 @@ public class SynchronizeVideos extends HttpServlet {
             int n_clients = 0;
             while(n_clients < n_files) {
                 Log.debug("waiting for connection no." + n_clients);
-                acceptWebSocketClient(server, n_clients);
+                try {
+                    Socket client = acceptWebSocketClient(server);
+                    readMediaFiles(client);
+                }
+                catch(Exception e) {
+                    server.close();
+                    Log.debug("exception 1: " + e.getMessage());
+                    return;
+                }
                 n_clients++;
             }
-            server.close();
             Log.debug("received from all players");
 
             // process videos
-            synchronize();
+            try {
+                synchronize();
+            }
+            catch(Exception e) {
+                server.close();
+                Log.debug("exception 2: " + e.getMessage());
+                return;
+            }
 
-//            jsonResponse.put("sessionId", sessionId);
-//            String workerId = request.getParameter("workerId");
-//            session.setAttribute("workerId", workerId);
-            // Send the response
-//            out.write(jsonResponse.toString());
+            // send the final video
+            if(combinedFileName.length() > 0) {
+                try {
+                    Socket client = acceptWebSocketClient(server);
+                    Log.debug("send combined video");
+                    sendCombinedVideo(client);
+                    Log.debug("done");
+                    server.close();
+                }
+                catch(Exception e) {
+                    server.close();
+                    Log.debug("exception 3: " + e.getMessage());
+                }
+            }
+
+
         } catch (Exception e) {
-            Log.debug(e.getMessage());
+            Log.debug("exception 4: " + e.getMessage());
         }
     }
 };

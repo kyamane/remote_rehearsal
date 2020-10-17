@@ -3,6 +3,8 @@
 const videoSocketPort = 9001;
 const allBlobsReadyEvent = new CustomEvent('all_blobs_ready');
 
+const statusText = document.getElementById("statusText");
+
 var localVideo;
 var localAudio;
 var localVideoStream;
@@ -100,7 +102,7 @@ function reset() {
             stopRecordingCommand();
         }
     }
-
+    statusText.innerHTML = "Disconnected";
     document.getElementById("conductorViewDiv").style = "display:none";
     document.getElementById("playerViewDiv").style = "display:none";
     document.getElementById("joinButton").disabled = false;
@@ -210,6 +212,7 @@ function startRecordingButtonCallback() {
 
 function conductorStartRecording() {
     // TODO: indicate recording
+    statusText.innerHTML = "Recording";
     // TODO: mute all videos
     recording = true;
 
@@ -280,6 +283,7 @@ function conductorStartRecording() {
 
 function conductorStopRecording() {
     recording = false;
+    statusText.innerHTML = "Receiving videos...";
     // stop recording
     localVideoStreamRecorder.stop();
     localAudioStreamRecorder.stop();
@@ -323,6 +327,8 @@ function sendBlobToServlet(index) {
         dummyDiv.parentElement.removeChild(dummyDiv);
         blobsToSend = [];
         recordingId = recordingId + 1;
+        // now receive combined video
+        receiveBlobFromServlet();
         return;
     }
     console.log("sendBlobToServlet(", index, ")");
@@ -376,6 +382,7 @@ function sendBlobToServlet(index) {
 }
 
 function synchronizeVideos() {
+    statusText.innerHTML = "Processing videos...";
     var ids = Object.keys(connections);
     var n = ids.lastIndexOf(conductorId);
     ids.splice(n, 1);
@@ -394,11 +401,75 @@ function synchronizeVideos() {
 
         async: true,
         cache: false,
-        timeout: 5000, // Timeout in ms
+        timeout: 10000, // Timeout in ms
 
         success: function (data) {
             console.log("success");
-	}
+	},
+        error: function(XMLHttpRequest, textStatus, errorThrown) {
+            alert("video processing error: " + errorThrown);
+            console.log("Status: " + textStatus);
+            console.log("Error: " + errorThrown);
+        }
+    });
+}
+
+function receiveBlobFromServlet() {
+    console.log("receiveBlobFromServlet");
+    var ws_url = "ws://localhost:" + videoSocketPort;
+    var ws = new WebSocket(ws_url);
+    ws.binaryType = 'arraybuffer';
+    var byteChunks = [];
+    console.log("websocket created");
+
+    ws.addEventListener('open', function(event) {
+        console.log("websocket opened");
+    });
+
+    ws.addEventListener('error', function(event) {
+        console.log("websocket error: ", event);
+    });
+
+    ws.addEventListener('close', function() {
+        var blob = new Blob(byteChunks, {type: 'video/webm'});
+        console.log("received video size: ", blob.size);
+        var url = window.URL.createObjectURL(blob);
+
+        statusText.innerHTML = "Processing completed; <a id=\'combinedVideoLink\' href=\'" + url + "\' target=\'_blank\'>click</a> to open";
+        var combinedVideoLink = document.getElementById("combinedVideoLink");
+        combinedVideoLink.onclick = function() {
+            statusText.innerHTML = "Connected";
+        };
+
+/*
+        var videoWindow = window.open("", "_blank");
+        console.log(videoWindow);
+        var video = document.createElement('video');
+        var videoDiv = document.createElement("div");
+        var linkDiv = document.createElement("div");
+        videoDiv.style = "text-align:center;";
+        linkDiv.style = "text-align:center;";
+        video.src = url;
+        video.autoplay    = true;
+        video.muted       = false;
+        video.playsinline = true;
+        video.controls = true;
+        video.height = 240;
+        video.width = 320;
+        var videoLink = document.createElement("a");
+        videoLink.href = url;
+        videoLink.innerHTML = "Save Video";
+        videoLink.download = "default.webm";
+        videoWindow.document.body.appendChild(videoDiv);
+        videoWindow.document.body.appendChild(linkDiv);
+        videoDiv.appendChild(video);
+        linkDiv.appendChild(videoLink);
+*/
+    });
+
+    ws.addEventListener('message', function(event) {
+        byteChunks.push(event.data);
+        console.log("message: received ", event.data.byteLength, " bytes");
     });
 }
 
@@ -447,6 +518,7 @@ function playerStartRecording() {
 
 function startRecordingCommand() {
     // TODO: indicate recording
+    statusText.innerHTML = "Recording";
     // TODO: mute all videos
     recording = true;
     playerStartRecording();
@@ -454,6 +526,7 @@ function startRecordingCommand() {
 
 function stopRecordingCommand() {
     recording = false;
+    statusText.innerHTML = "Connected";
     // stop recording
     localVideoStreamRecorder.stop();
     localAudioStreamRecorder.stop();
@@ -465,6 +538,7 @@ function startSession() {
 }
 
 function leave() {
+    statusText.innerHTML = "Leaving...";
     if(localVideoStream) {
         localVideoStream.getTracks().forEach(function(track) {
             track.stop();
@@ -507,6 +581,7 @@ function leave() {
 }
 
 function join() {
+    statusText.innerHTML = "Connecting...";
     conductor = document.getElementById("conductorCheckbox").checked;
     if(conductor) {
         document.getElementById("conductorViewDiv").style.display = "block";
@@ -578,6 +653,8 @@ function join() {
             socket.on('video-blob', receiveLocalVideo);
             socket.on('audio-blob', receiveLocalAudio);
 
+            statusText.innerHTML = "Connected";
+
             function onConnect() {
                 socketId = socket.id;
                 console.log("onConnect: socketId = " + socketId);
@@ -643,7 +720,7 @@ function join() {
                     var raudioNode = new Audio();
                     raudioNode.srcObject = event.stream;
                     var rgainNode = recordAudioContext.createGain();
-                    rgainNode.gain.value = 0.1;  // reduce gain for record
+                    rgainNode.gain.value = 1.0;  // reduce gain for record?
                     raudioNode.onloadedmetadata = function() {
                         var raudioSource = recordAudioContext.createMediaStreamSource(raudioNode.srcObject);
                         raudioNode.play();
