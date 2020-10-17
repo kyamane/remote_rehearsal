@@ -9,6 +9,7 @@ Enable remote rehearsals of music ensembles, which is impossible with off-the-sh
 * Two preset views for different roles:
   * Conductor: players displayed in the large center area as grid
   * Players: conductor displayed in the large center area; other players at the bottom
+* Automatic sync/merge of conductor/player videos + instant replay of the merged video
 
 ## Building and Running
 ### Signaling server
@@ -41,10 +42,9 @@ Again, you'll need an SSL server with a verified certificate to connection from 
 1. Open the main HTML file in the latest version of Chrome.
 1. Input your name to the text box, check the conductor box if you are the conductor, and click "Join."
 Note that the behavior in case multiple conductors exist in the rehearsal is undefined ;)
+1. The conductor interface inlcudes a "Record" button. By pressing this button, you can record all player video/audio and generate a synchronized video.
 1. Click "Leave" to leave the rehearsal.
 
 ## Future Plan
 - [ ] In the conductor view, arrange the player videos in the standard orchestra layout.
-- [ ] Instant replay: while the conductor is conducting, turn off the audio of all clients and record the video of all players; then replay all recordings synchronized to the conductor's stream. 
-Not ideal, but at least this will 1) avoid the confusion due to delays and 2) provide semi-realtime feedback.
 - [ ] Conductor movement prediction: 1) build a (DNN?) model of conductor movement, perhaps using data from skeleton tracking with Azure Kinect; 2) learn a model to reconstruct conductor appearance from skeleton movement; 3) during rehearsal, show the conductor movement 2T seconds ahead of real time to the players, where T is the one-way latency between the conductor and players. Theoretically, the conductor should hear the sound like in an in-person rehearsal.
