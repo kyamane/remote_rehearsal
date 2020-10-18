@@ -6,11 +6,9 @@
     <script type="text/javascript" src="./js/jquery-3.2.1.min.js"></script>
     <title>Remote Rehearsal ver.0.0.1</title>
   </head>
-  <body onload=startSession()>
+  <!-- startSession(debug_mode) -->
+  <body onload=startSession(true)>
     <!-- join the rehearsal -->
-    <!-- hidden audio element -->
-<!--    <div style="display:none;"><audio id="localAudio"></div> -->
-
     <div class="clientSettingView" id="clientSettingDiv">
       <p id="statusText">Disconnected</p>
       <table style="width:100%;">
@@ -25,7 +23,7 @@
             <input type="button" id="leaveButton" value="Leave" onclick="leave()" disabled></input>
           </td>
           <td>
-            <input type="button" id="mutePlayersButton" value="Mute Players" onclick="mutePlayersButtonCallback()"></input>
+            <input type="button" id="mutePlayersButton" value="Mute Players (M)" onclick="mutePlayersButtonCallback()"></input>
           </td>
         </tr>
       </table>
@@ -37,7 +35,7 @@
       </div>
       <div class="mainView">
         <div class="conductorUI">
-          <input type="button" id="startRecordingButton" value="Start Recording" onclick="startRecordingButtonCallback()"></input>
+          <input type="button" id="startRecordingButton" value="Start Recording (R)" onclick="startRecordingButtonCallback()"></input>
         </div>
         <!-- players in tile -->
         <div class="conductorViewPlayerVideoDiv">
@@ -95,8 +93,8 @@
       </div>
     </div>
     <!-- end of player view -->
-    <!-- audio controls for debugging -->
-    <p><audio controls id="localAudio"></p>
+    <!-- audio element; hidden unless in debug mode -->
+    <div id="localAudioDiv"><audio controls id="localAudio"></div>
 
     <script src="./config.js"></script>
     <script src="./js/dialog.js"></script>

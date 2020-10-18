@@ -42,6 +42,7 @@ const textHeight = parseFloat(window.getComputedStyle(document.body).fontSize) +
 const conductorViewPlayerVideoWidth = 100;
 const conductorViewPlayerVideoHeight = 100;
 
+/*
 const constraints = {
     video: true,
     audio: {
@@ -52,6 +53,7 @@ const constraints = {
         channelCount: {ideal: 2, min: 1}
     }
 };
+*/
 
 var peerConnectionConfig = {
     'iceServers': [
@@ -65,6 +67,17 @@ var peerConnectionConfig = {
 };
 
 function keyboardCallback(e) {
+    if(e.isComposing || e.keyCode === 229) {
+        return;
+    }
+    // M -> mute/unmute
+    if(e.keyCode == 77) {
+        mutePlayersButtonCallback();
+    }
+    // R -> start/stop recording (conductor only)
+    else if(conductor && e.keyCode == 82) {
+        startRecordingButtonCallback();
+    }
 }
 
 // set the video size of aspect ratio 4:3 such that it fits within (max_w, max_h)
@@ -138,7 +151,7 @@ function reset() {
     recordAudioDestination = null;
     playersMuted = false;
     muteStateBeforeRecording = false;
-    document.getElementById("mutePlayersButton").value = "Mute Players";
+    document.getElementById("mutePlayersButton").value = "Mute Players (M)";
     playGainNodes = [];
 }
 
@@ -210,29 +223,25 @@ function startRecordingButtonCallback() {
         Object.keys(connections).forEach(function(socketListId) {
             socket.emit('signal', socketListId, JSON.stringify({'recording': 'false'}));
         });
-        document.getElementById("startRecordingButton").value = "Start Recording";
+        document.getElementById("startRecordingButton").value = "Start Recording (R)";
     }
     else {
         conductorStartRecording();
         Object.keys(connections).forEach(function(socketListId) {
             socket.emit('signal', socketListId, JSON.stringify({'recording': 'true'}));
         });
-        document.getElementById("startRecordingButton").value = "Stop Recording";
+        document.getElementById("startRecordingButton").value = "Stop Recording (R)";
     }
 }
 
 function conductorStartRecording() {
-    // TODO: indicate recording
+    recording = true;
     statusText.innerHTML = "Recording";
+    // mute audio from players
     muteStateBeforeRecording = playersMuted;
     if(!playersMuted) mutePlayersButtonCallback()
 
-    recording = true;
-
-    // add oscillation
-    console.log("currentTime = ", recordAudioContext.currentTime);
-
-    // create oscillator and connect to both streams
+    // create oscillator for both streams
     var playOscillator = playAudioContext.createOscillator();
     playOscillator.type = "sine";
     playOscillator.connect(playAudioDestination);
@@ -300,7 +309,7 @@ function conductorStopRecording() {
     // stop recording
     localVideoStreamRecorder.stop();
     localAudioStreamRecorder.stop();
-    // TODO: stop indicating recording
+    // unmute player audio if it was not muted before recording
     if(!muteStateBeforeRecording) mutePlayersButtonCallback()
 }
 
@@ -496,7 +505,7 @@ function mutePlayersButtonCallback() {
                 playGainNodes[id].gain.setValueAtTime(1.0, playAudioContext.currentTime);
             }
         });
-        button.value = "Mute Players"
+        button.value = "Mute Players (M)"
         playersMuted = false;
     }
     else {
@@ -506,7 +515,7 @@ function mutePlayersButtonCallback() {
                 playGainNodes[id].gain.setValueAtTime(0.0, playAudioContext.currentTime);
             }
         });
-        button.value = "Unmute Players"
+        button.value = "Unmute Players (M)"
         playersMuted = true;
     }
 }
@@ -575,7 +584,10 @@ function stopRecordingCommand() {
     if(!muteStateBeforeRecording) mutePlayersButtonCallback()
 }
 
-function startSession() {
+function startSession(debug_mode) {
+    if(!debug_mode) {
+        document.getElementById("localAudioDiv").style = "display:none";
+    }
     document.addEventListener('keydown', keyboardCallback);
 
     // check if all required functions are available
@@ -807,7 +819,10 @@ function join() {
                         }
                         //Wait for their video stream
                         connections[socketListId].onaddstream = function() {
-                            gotRemoteStream(event, socketListId)
+                            gotRemoteStream(event, socketListId);
+                        }
+                        connections[socketListId].ontrack = function() {
+                            gotRemoteTrack(event, socketListId);
                         }
                         //Add the local video stream
                         connections[socketListId].addStream(localVideoStream);
