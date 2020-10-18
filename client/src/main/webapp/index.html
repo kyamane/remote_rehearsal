@@ -8,18 +8,27 @@
   </head>
   <body onload=startSession()>
     <!-- join the rehearsal -->
+    <!-- hidden audio element -->
+<!--    <div style="display:none;"><audio id="localAudio"></div> -->
+
     <div class="clientSettingView" id="clientSettingDiv">
       <p id="statusText">Disconnected</p>
-      <input type="text" id="nameText" value="Your Name"></input>
-      <input type="checkbox" id="conductorCheckbox" value="1"></input>
-      <label for="conductorCheckbox">Conductor</label>
-      <input type="button" id="joinButton" value="Join" onclick="join()"></input>
-      <input type="button" id="leaveButton" value="Leave" onclick="leave()" disabled></input>
-    </div>
-
-    <!-- hidden audio element -->
-    <div style="display:none">
-      <audio id="localAudio" autoplay></video>
+      <table style="width:100%;">
+        <tr>
+          <td><select name="audioInputSelection" id="audioInputSelection"><option value="none">Select Audio In</option></select></td>
+          <td><select name="videoInputSelection" id="videoInputSelection"><option value="none">Select Video In</option></select></td>
+          <td><select name="audioOutputSelection" id="audioOutputSelection"><option value="none">Select Audio Out</option></select></td>
+          <td><input type="text" id="nameText" value="Your Name"></input></td>
+          <td><input type="checkbox" id="conductorCheckbox" value="1"></input><label for="conductorCheckbox">Conductor</label></td>
+          <td>
+            <input type="button" id="joinButton" value="Join" onclick="join()"></input>
+            <input type="button" id="leaveButton" value="Leave" onclick="leave()" disabled></input>
+          </td>
+          <td>
+            <input type="button" id="mutePlayersButton" value="Mute Players" onclick="mutePlayersButtonCallback()"></input>
+          </td>
+        </tr>
+      </table>
     </div>
 
     <!-- conductor view -->
@@ -86,6 +95,8 @@
       </div>
     </div>
     <!-- end of player view -->
+    <!-- audio controls for debugging -->
+    <p><audio controls id="localAudio"></p>
 
     <script src="./config.js"></script>
     <script src="./js/dialog.js"></script>
