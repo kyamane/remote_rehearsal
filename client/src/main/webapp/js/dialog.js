@@ -11,6 +11,8 @@ var localVideoStream;
 var localAudioStream;
 var playAudioStream;
 var recordAudioStream;
+var oscillatorStream;
+var oscillatorStreamId;
 var socketId;
 var connections = [];
 var socket;
@@ -29,10 +31,10 @@ var localVideoRecordedChunks = [];
 var localAudioStreamRecorder;
 var localAudioRecordedChunks = [];
 
-var playAudioContext;
-var recordAudioContext;
+var audioContext;
 var playAudioDestination;
 var recordAudioDestination;
+var oscillatorDestination;
 
 var playersMuted = false;
 var muteStateBeforeRecording = false;
@@ -41,19 +43,6 @@ var playGainNodes = [];
 const textHeight = parseFloat(window.getComputedStyle(document.body).fontSize) + 10;
 const conductorViewPlayerVideoWidth = 100;
 const conductorViewPlayerVideoHeight = 100;
-
-/*
-const constraints = {
-    video: true,
-    audio: {
-        autoGainControl: false,
-        noiseSuppression: false,
-        echoCancellation: false,
-        latency: {ideal: 0.01, max: 0.1},
-        channelCount: {ideal: 2, min: 1}
-    }
-};
-*/
 
 var peerConnectionConfig = {
     'iceServers': [
@@ -130,6 +119,8 @@ function reset() {
     localAudioStream = null;
     playAudioStream = null;
     recordAudioStream = null;
+    oscillatorStream = null;
+    oscillatorStreamId = null;
     socketId = null;
     connections = [];
     socket = null;
@@ -145,10 +136,10 @@ function reset() {
     localVideoRecordedChunks = [];
     localAudioRecordedChunks = [];
 
-    playAudioContext = null;
-    recordAudioContext = null;
+    audioContext = null;
     playAudioDestination = null;
     recordAudioDestination = null;
+    oscillatorDestination = null;
     playersMuted = false;
     muteStateBeforeRecording = false;
     document.getElementById("mutePlayersButton").value = "Mute Players (M)";
@@ -186,6 +177,10 @@ function gotMessageFromServer(fromId, message) {
                     conductorId = fromId;
                 }
             }
+        }
+        if(signal.sync_stream_id) {
+            oscillatorStreamId = signal.sync_stream_id;
+            console.log("oscillatorStreamId: ", oscillatorStreamId);
         }
         if(signal.sdp) {
             connections[fromId].setRemoteDescription(new RTCSessionDescription(signal.sdp)).then(function() {
@@ -242,19 +237,15 @@ function conductorStartRecording() {
     if(!playersMuted) mutePlayersButtonCallback()
 
     // create oscillator for both streams
-    var playOscillator = playAudioContext.createOscillator();
-    playOscillator.type = "sine";
-    playOscillator.connect(playAudioDestination);
-    var recordOscillator = recordAudioContext.createOscillator();
-    recordOscillator.type = "sine";
-    recordOscillator.connect(recordAudioDestination);
+    var oscillator = audioContext.createOscillator();
+    oscillator.type = "sine";
+    oscillator.connect(playAudioDestination);  // to be removed?
+    oscillator.connect(recordAudioDestination);
+    oscillator.connect(oscillatorDestination);
 
-    playOscillator.frequency.value = 440;
-    recordOscillator.frequency.value = 440;
-    playOscillator.start();
-    recordOscillator.start();
-    playOscillator.stop(playAudioContext.currentTime + 2.0);
-    recordOscillator.stop(recordAudioContext.currentTime + 2.0);
+    oscillator.frequency.value = 440;
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 2.0);
 
     // set up the event to notify that all videos are ready for sending to servlet
     var dummyDiv = document.getElementById("dummyDiv");
@@ -462,31 +453,6 @@ function receiveBlobFromServlet() {
         combinedVideoLink.onclick = function() {
             statusText.innerHTML = "Connected";
         };
-
-/*
-        var videoWindow = window.open("", "_blank");
-        console.log(videoWindow);
-        var video = document.createElement('video');
-        var videoDiv = document.createElement("div");
-        var linkDiv = document.createElement("div");
-        videoDiv.style = "text-align:center;";
-        linkDiv.style = "text-align:center;";
-        video.src = url;
-        video.autoplay    = true;
-        video.muted       = false;
-        video.playsinline = true;
-        video.controls = true;
-        video.height = 240;
-        video.width = 320;
-        var videoLink = document.createElement("a");
-        videoLink.href = url;
-        videoLink.innerHTML = "Save Video";
-        videoLink.download = "default.webm";
-        videoWindow.document.body.appendChild(videoDiv);
-        videoWindow.document.body.appendChild(linkDiv);
-        videoDiv.appendChild(video);
-        linkDiv.appendChild(videoLink);
-*/
     });
 
     ws.addEventListener('message', function(event) {
@@ -502,7 +468,7 @@ function mutePlayersButtonCallback() {
         keys.forEach(function(id) {
             if(id != conductorId) {
                 console.log("unmuted ", id);
-                playGainNodes[id].gain.setValueAtTime(1.0, playAudioContext.currentTime);
+                playGainNodes[id].gain.setValueAtTime(1.0, audioContext.currentTime);
             }
         });
         button.value = "Mute Players (M)"
@@ -512,7 +478,7 @@ function mutePlayersButtonCallback() {
         keys.forEach(function(id) {
             if(id != conductorId) {
                 console.log("muted ", id);
-                playGainNodes[id].gain.setValueAtTime(0.0, playAudioContext.currentTime);
+                playGainNodes[id].gain.setValueAtTime(0.0, audioContext.currentTime);
             }
         });
         button.value = "Unmute Players (M)"
@@ -648,6 +614,11 @@ function leave() {
             track.stop();
         });
     }
+    if(oscillatorStream) {
+        oscillatorStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+    }
     localAudioElement.srcObject = null;
     // remove all videos except local
     if(conductor) {
@@ -749,14 +720,14 @@ function join() {
             localVideo.srcObject = stream;
 
             localAudioStream = audioStream;
-            // AudioContexts and destinations for played and recorded streams
-            playAudioContext = new AudioContext();
-            recordAudioContext = new AudioContext();
-            playAudioDestination = playAudioContext.createMediaStreamDestination();
-            recordAudioDestination = recordAudioContext.createMediaStreamDestination();
+            // create a common AudioContext and separate destinations for played and recorded streams
+            audioContext = new AudioContext();
+            playAudioDestination = audioContext.createMediaStreamDestination();
+            recordAudioDestination = audioContext.createMediaStreamDestination();
+            if(conductor) oscillatorDestination = audioContext.createMediaStreamDestination();
 
             // localAudioStream goes to record
-            var localAudioSource = recordAudioContext.createMediaStreamSource(localAudioStream);
+            var localAudioSource = audioContext.createMediaStreamSource(localAudioStream);
             localAudioSource.connect(recordAudioDestination);
 
             if(conductor) {
@@ -780,6 +751,7 @@ function join() {
             });
             playAudioStream = playAudioDestination.stream;
             recordAudioStream = recordAudioDestination.stream;
+            if(conductor) oscillatorStream = oscillatorDestination.stream;
         });
     }
 
@@ -817,27 +789,25 @@ function join() {
                                 socket.emit('signal', socketListId, JSON.stringify({'ice': event.candidate}));
                             }
                         }
-                        //Wait for their video stream
+                        // wait for other's video streams
                         connections[socketListId].onaddstream = function() {
                             gotRemoteStream(event, socketListId);
                         }
-                        connections[socketListId].ontrack = function() {
-                            gotRemoteTrack(event, socketListId);
-                        }
-                        //Add the local video stream
+                        // send the local video and audio streams
                         connections[socketListId].addStream(localVideoStream);
+                        connections[socketListId].addStream(localAudioStream);
                         //send local name
                         socket.emit('signal', socketListId, JSON.stringify({'name': localName}));
                         // send conductor
                         if(conductor) {
                             socket.emit('signal', socketListId, JSON.stringify({'conductor': 'true'}));
-                            // conductor sends recordAudioStream (=local+sync)
-                            connections[socketListId].addStream(recordAudioStream);
+                            // conductor sends the track of the oscillatorStream
+                            socket.emit('signal', socketListId, JSON.stringify({'sync_stream_id': oscillatorStream.id}));
+                            console.log("sending oscillator stream to = ", socketListId, ", stream = ", oscillatorStream);
+                            connections[socketListId].addStream(oscillatorStream);
                         }
                         else {
                             socket.emit('signal', socketListId, JSON.stringify({'conductor': 'false'}));
-                            // players send localAudioStream
-                            connections[socketListId].addStream(localAudioStream);
                         }
                     }
                 });
@@ -854,30 +824,36 @@ function join() {
     }
 
     function gotRemoteStream(event, id) {
-        console.log("gotRemoteStream: " + event + ", " + id);
+        console.log("gotRemoteStream: from = ", id, ", stream = ", event.stream);
         // process audio stream
         if(event.stream.getVideoTracks().length == 0) {
-            if(id == conductorId) {
-                // add conductor's audio (record) stream to record
+            // sync (oscillator) stream
+            if(id == conductorId && event.stream.id == oscillatorStreamId) {
+                console.log("this is sync audio");
+                // add sync audio stream to record (and play)
                 var rAudioElement = new Audio();
                 rAudioElement.srcObject = event.stream;
-                var rGainNode = recordAudioContext.createGain();
-                rGainNode.gain.value = 1.0;  // reduce gain for record?
+                var rGainNode = audioContext.createGain();
+                rGainNode.gain.value = 1.0;
                 rAudioElement.onloadedmetadata = function() {
-                    var rAudioSource = recordAudioContext.createMediaStreamSource(rAudioElement.srcObject);
+                    var rAudioSource = audioContext.createMediaStreamSource(rAudioElement.srcObject);
                     rAudioSource.connect(rGainNode);
                     rGainNode.connect(recordAudioDestination);
+                    rGainNode.connect(playAudioDestination);  // to be removed?
                 }
             }
-            // add everything including conductor's to playAudio
-            var audioElement = new Audio();
-            audioElement.srcObject = event.stream;
-            playGainNodes[id] = playAudioContext.createGain();
-            playGainNodes[id].gain.value = 1.0;
-            audioElement.onloadedmetadata = function() {
-                var audioSource = playAudioContext.createMediaStreamSource(audioElement.srcObject);
-                audioSource.connect(playGainNodes[id]);
-                playGainNodes[id].connect(playAudioDestination);
+            else {
+                console.log("this is audio");
+                // add everything including conductor's to playAudio
+                var audioElement = new Audio();
+                audioElement.srcObject = event.stream;
+                playGainNodes[id] = audioContext.createGain();
+                playGainNodes[id].gain.value = 1.0;
+                audioElement.onloadedmetadata = function() {
+                    var audioSource = audioContext.createMediaStreamSource(audioElement.srcObject);
+                    audioSource.connect(playGainNodes[id]);
+                    playGainNodes[id].connect(playAudioDestination);
+                }
             }
             return;
         }
