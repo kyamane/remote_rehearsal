@@ -10,6 +10,7 @@ Enable remote rehearsals of music ensembles, which is impossible with off-the-sh
   * Conductor: players displayed in the large center area as grid
   * Players: conductor displayed in the large center area; other players at the bottom
 * Automatic sync/merge of conductor/player videos + instant replay of the merged video
+* Conductor can share audio from a file (e.g. to play along)
 
 ## Building and Running
 ### Signaling server
@@ -51,23 +52,27 @@ Videos are synchronized using a sync sound added to the conductor's audio signal
 
 ### Audio Played
 
-Everyone hears everyone else's  audio stream, including the sync sound.
+Everyone hears everyone else's audio stream and the shared audio file. Sync sound is currently audible as well for debugging purpose, but will be removed in the future.
 
-Role\Input | Conductor | Sync | Player *i* | Player *j* (<>*i*)
------------|-----------|------|------------|------------------
-Conductor | No | Yes | Yes | Yes
-Player *i* | Yes | Yes | No | Yes
-Player *j* | Yes | Yes | Yes | No
+Role\Input | Conductor | Shared audio | Sync | Player *i* | Player *j* (<>*i*)
+-----------|-----------|--------------|------|------------|------------------
+Conductor | No | Yes | Yes | Yes | Yes
+Player *i* | Yes | Yes | Yes | No | Yes
+Player *j* | Yes | Yes | Yes | Yes | No
 
 ### Audio Recorded
 
-The local and conductor (including sync sound) audio streams are recorded. The sync sound is used for synchronizing the videos with possibly different delays.
+The local audio stream and sync sound are recorded. The sync sound is used for synchronizing the videos with possibly different delays.
 
 Role\Input | Conductor | Sync | Player *i* | Player *j* (<>*i*)
 -----------|-----------|------|------------|------------------
 Conductor | Yes | Yes | No | No
-Player *i* | Yes | Yes | Yes | No
-Player *j* | Yes | Yes | No | Yes
+Player *i* | No | Yes | Yes | No
+Player *j* | No | Yes | No | Yes
+
+Here is a graphical representation:
+
+<img alt="rr_audio_connection_chart" src="./resource/rr_audio_connection_chart.png" width="600">
 
 ### Data processing
 
