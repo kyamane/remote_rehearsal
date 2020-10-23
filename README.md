@@ -52,15 +52,17 @@ Videos are synchronized using a sync sound added to the conductor's audio signal
 
 ### Audio Played
 
-Everyone hears everyone else's audio stream and the shared audio file. Sync sound is currently audible as well for debugging purpose, but will be removed in the future.
+Everyone hears everyone else's audio stream and the shared audio file. Sync sound is currently audible as well for debugging purpose, but will be removed in the future. Conductor can mute all players' audio. Player can mute all other players' audio, but not conductor's.
 
 Role\Input | Conductor | Shared audio | Sync | Player *i* | Player *j* (<>*i*)
 -----------|-----------|--------------|------|------------|------------------
-Conductor | No | Yes | Yes | Yes | Yes
-Player *i* | Yes | Yes | Yes | No | Yes
-Player *j* | Yes | Yes | Yes | Yes | No
+Conductor | No | Yes | Yes | Yes* | Yes*
+Player *i* | Yes | Yes | Yes | No | Yes*
+Player *j* | Yes | Yes | Yes | Yes* | No
 
-### Audio Recorded
+\*: can be muted
+
+### Audio Recorded Locally
 
 The local audio stream and sync sound are recorded. The sync sound is used for synchronizing the videos with possibly different delays.
 
@@ -76,8 +78,8 @@ Here is a graphical representation:
 
 ### Data processing
 
-1. The players' video and audio streams are sent to the conductor's local machine via the socket server.
-1. The video and audio data are sent to the Java servlet via WebSocket.
+1. The blobs recorded from players' video and audio streams are sent to the conductor's local machine via the socket server.
+1. The players' video and audio blobs are sent to the Java servlet via WebSocket along with the conductor's.
 1. The Java servlet looks for the sync sound in each audio data and determines the delay of each player's video and audio.
 1. The video and audio data are merged using [ffmpeg](https://ffmpeg.org/).
 
