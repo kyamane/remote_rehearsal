@@ -25,11 +25,18 @@ var recording = false;
 var recordingId = 0;
 // only used by conductor
 var blobsToSend = [];
+var audioFileSelector;
+var fileAudioElement;
+var fileAudioStream;
 // only used by players
 var localVideoStreamRecorder;
 var localVideoRecordedChunks = [];
 var localAudioStreamRecorder;
 var localAudioRecordedChunks = [];
+var fileAudioStreamId;
+var fileAudioGainNode;
+var fileAudioSource;
+var combinedStreamId;
 
 var audioContext;
 var playAudioDestination;
@@ -43,6 +50,7 @@ var playGainNodes = [];
 const textHeight = parseFloat(window.getComputedStyle(document.body).fontSize) + 10;
 const conductorViewPlayerVideoWidth = 100;
 const conductorViewPlayerVideoHeight = 100;
+
 
 var peerConnectionConfig = {
     'iceServers': [
@@ -66,6 +74,10 @@ function keyboardCallback(e) {
     // R -> start/stop recording (conductor only)
     else if(conductor && e.keyCode == 82) {
         startRecordingButtonCallback();
+    }
+    // space -> play audio file
+    else if(conductor && e.keyCode == 32) {
+        fileAudioElement.play();
     }
 }
 
@@ -144,6 +156,14 @@ function reset() {
     muteStateBeforeRecording = false;
     document.getElementById("mutePlayersButton").value = "Mute Players (M)";
     playGainNodes = [];
+
+    audioFileSelector = null;
+    fileAudioElement = null;
+    fileAudioStream = null;
+    fileAudioStreamId = null;
+    fileAudioGainNode = null;
+    fileAudioSource = null;
+    combinedStreamId = null;
 }
 
 function gotMessageFromServer(fromId, message) {
@@ -182,6 +202,14 @@ function gotMessageFromServer(fromId, message) {
             oscillatorStreamId = signal.sync_stream_id;
             console.log("oscillatorStreamId: ", oscillatorStreamId);
         }
+        if(signal.file_stream_id) {
+            fileAudioStreamId = signal.file_stream_id;
+            console.log("fileAudioStreamId: ", fileAudioStreamId);
+        }
+        if(signal.combined_stream_id) {
+            combinedStreamId = signal.combined_stream_id;
+            console.log("combinedStreamId: ", combinedStreamId);
+        }
         if(signal.sdp) {
             connections[fromId].setRemoteDescription(new RTCSessionDescription(signal.sdp)).then(function() {
                 if(signal.sdp.type == 'offer') {
@@ -207,6 +235,17 @@ function gotMessageFromServer(fromId, message) {
 /////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////// conductor functions ////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
+function updateAudioFile() {
+    if(audioFileSelector.files.length > 0) {
+        console.log("audio file selected: ", audioFileSelector.files[0]);
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            fileAudioElement.src = e.target.result;
+        }
+        reader.readAsDataURL(audioFileSelector.files[0]);
+    }
+}
+
 // "Start Recording" button callback
 // should be called only from the conductor
 function startRecordingButtonCallback() {
@@ -446,18 +485,35 @@ function receiveBlobFromServlet() {
     ws.addEventListener('close', function() {
         var blob = new Blob(byteChunks, {type: 'video/webm'});
         console.log("received video size: ", blob.size);
+        statusText.innerHTML = "Connected";
         var url = window.URL.createObjectURL(blob);
 
-        statusText.innerHTML = "Processing completed; <a id=\'combinedVideoLink\' href=\'" + url + "\' target=\'_blank\'>click</a> to open";
-        var combinedVideoLink = document.getElementById("combinedVideoLink");
-        combinedVideoLink.onclick = function() {
-            statusText.innerHTML = "Connected";
-        };
+        // TODO: connect blob's stream to players
+
+        if(confirm("Processing completed. Play video?")) {
+            var win = window.open("", "_blank");
+            playCombinedVideoURL(win, url);
+        }
     });
 
     ws.addEventListener('message', function(event) {
         byteChunks.push(event.data);
         console.log("message: received ", event.data.byteLength, " bytes");
+    });
+}
+
+function playCombinedVideoURL(win, url) {
+    var combinedVideoElement = win.document.createElement("video");
+    combinedVideoElement.src = url;
+    combinedVideoElement.autoplay = false;
+    combinedVideoElement.muted = false;
+    combinedVideoElement.playsinline = true;
+    combinedVideoElement.controls = true;
+    win.document.body.appendChild(combinedVideoElement);
+    combinedVideoElement.addEventListener("canplay", event => {
+        var combinedVideoStream = combinedVideoElement.captureStream();
+        console.log("broadcast combined video stream: ", combinedVideoStream.id);
+        broadcastStream("combined_stream_id", combinedVideoStream);
     });
 }
 
@@ -484,6 +540,23 @@ function mutePlayersButtonCallback() {
         button.value = "Unmute Players (M)"
         playersMuted = true;
     }
+}
+
+function broadcastStream(keyword, stream) {
+    Object.keys(connections).forEach(function(socketListId) {
+        if(socketListId != socketId) {
+            var json_object = {};
+            json_object[keyword] = stream.id;
+            socket.emit('signal', socketListId, JSON.stringify(json_object));
+            console.log("sending file audio stream to = ", socketListId, ", stream = ", stream);
+            connections[socketListId].addStream(stream);
+            connections[socketListId].createOffer().then(function(description) {
+                connections[socketListId].setLocalDescription(description).then(function() {
+                    socket.emit('signal', socketListId, JSON.stringify({'sdp': connections[socketListId].localDescription}));
+                }).catch(e => console.log(e));
+            });
+        }
+    });
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -548,6 +621,16 @@ function stopRecordingCommand() {
     localAudioStreamRecorder.stop();
     // TODO: stop indicating recording
     if(!muteStateBeforeRecording) mutePlayersButtonCallback()
+}
+
+function playCombinedVideoStream(win, stream) {
+    var combinedVideoElement = win.document.createElement("video");
+    combinedVideoElement.srcObject = stream;
+    combinedVideoElement.autoplay = false;
+    combinedVideoElement.muted = false;
+    combinedVideoElement.playsinline = true;
+    combinedVideoElement.controls = true;
+    win.document.body.appendChild(combinedVideoElement);
 }
 
 function startSession(debug_mode) {
@@ -648,6 +731,7 @@ function leave() {
     if(socket) {
         socket.disconnect();
     }
+    audioContext.close();
     reset();
 }
 
@@ -656,6 +740,17 @@ function join() {
     conductor = document.getElementById("conductorCheckbox").checked;
     if(conductor) {
         document.getElementById("conductorViewDiv").style.display = "block";
+        audioFileSelector = document.getElementById("audioFileSelector");
+        audioFileSelector.addEventListener("change", updateAudioFile);
+        fileAudioElement = document.getElementById("fileAudio");
+        fileAudioStream = fileAudioElement.captureStream();
+
+//        fileAudioElement.addEventListener('canplay', function(e) {
+        fileAudioElement.addEventListener('canplaythrough', function(e) {
+            fileAudioStream = fileAudioElement.captureStream();
+            broadcastStream('file_stream_id', fileAudioStream);
+        });
+
     }
     else {
         document.getElementById("playerViewDiv").style.display = "block";
@@ -666,7 +761,6 @@ function join() {
     document.getElementById("leaveButton").disabled = false;
 
     localAudioElement = document.getElementById("localAudio");
-    console.log("localAudioElement: ", localAudioElement);
     if(conductor) {
         localVideo = document.getElementById("conductorViewLocalVideo");
     }
@@ -793,18 +887,21 @@ function join() {
                         connections[socketListId].onaddstream = function() {
                             gotRemoteStream(event, socketListId);
                         }
+                        if(conductor) {
+                            // conductor sends the track of the oscillatorStream
+                            socket.emit('signal', socketListId, JSON.stringify({'sync_stream_id': oscillatorStream.id}));
+                            console.log("sending oscillator stream to = ", socketListId, ", stream = ", oscillatorStream);
+                            connections[socketListId].addStream(oscillatorStream);
+                        }
                         // send the local video and audio streams
                         connections[socketListId].addStream(localVideoStream);
                         connections[socketListId].addStream(localAudioStream);
+
                         //send local name
                         socket.emit('signal', socketListId, JSON.stringify({'name': localName}));
                         // send conductor
                         if(conductor) {
                             socket.emit('signal', socketListId, JSON.stringify({'conductor': 'true'}));
-                            // conductor sends the track of the oscillatorStream
-                            socket.emit('signal', socketListId, JSON.stringify({'sync_stream_id': oscillatorStream.id}));
-                            console.log("sending oscillator stream to = ", socketListId, ", stream = ", oscillatorStream);
-                            connections[socketListId].addStream(oscillatorStream);
                         }
                         else {
                             socket.emit('signal', socketListId, JSON.stringify({'conductor': 'false'}));
@@ -842,6 +939,24 @@ function join() {
                     rGainNode.connect(playAudioDestination);  // to be removed?
                 }
             }
+            else if(id == conductorId && event.stream.id == fileAudioStreamId) {
+                console.log("this is file audio");
+                // add file audio stream to play
+                if(fileAudioGainNode != null) {
+                    fileAudioGainNode.disconnect();
+                    fileAudioSource.disconnect();
+                    console.log("previous stream removed");
+                }
+                var fAudioElement = new Audio();
+                fAudioElement.srcObject = event.stream;
+                fileAudioGainNode = audioContext.createGain();
+                fileAudioGainNode.gain.value = 1.0;
+                fAudioElement.onloadedmetadata = function() {
+                    fileAudioSource = audioContext.createMediaStreamSource(fAudioElement.srcObject);
+                    fileAudioSource.connect(fileAudioGainNode);
+                    fileAudioGainNode.connect(playAudioDestination);
+                }
+            }
             else {
                 console.log("this is audio");
                 // add everything including conductor's to playAudio
@@ -858,6 +973,17 @@ function join() {
             return;
         }
 
+        // combined video
+        if(id == conductorId && event.stream.id == combinedStreamId) {
+            console.log("this is combined video");
+            if(confirm("Combined video received. Play?")) {
+                var win = window.open("", "_blank");
+                playCombinedVideoStream(win, event.stream);
+            }
+            return;
+        }
+
+        // live video
         // create the video and surrounding divs
         var video = document.createElement('video');
         var div = document.createElement('div');
