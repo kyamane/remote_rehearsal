@@ -17,7 +17,18 @@
           <td><select name="videoInputSelection" id="videoInputSelection"><option value="none">Select Video In</option></select></td>
           <td><select name="audioOutputSelection" id="audioOutputSelection"><option value="none">Select Audio Out</option></select></td>
           <td><input type="text" id="nameText" value="Your Name"></input></td>
-          <td><input type="checkbox" id="conductorCheckbox" value="1"></input><label for="conductorCheckbox">Conductor</label></td>
+          <td><input type="checkbox" id="conductorCheckbox" value="1" onclick="conductorCheckboxClicked(this)"></input><label for="conductorCheckbox">Conductor</label></td>
+          <td>
+            <select disabled name="playerVideoLayoutSelection" id="playerVideoLayoutSelection">
+              <option value="chamb_orch">Choose Layout</option>
+              <option value="one2one">One-to-one (1x1)</option>
+              <option value="small_chamb">Small Chamber Group (1x5)</option>
+              <option value="large_chamb">Large Chamber Group (3x4)</option>
+              <option value="string_orch">String Orchestra (4x6)</option>
+              <option value="chamb_orch">Chamber Orchestra (5x8) [default]</option>
+              <option value="full_orch">Full Orchestra (6x10)</option>
+            </select>
+          </td>
           <td>
             <input type="button" id="joinButton" value="Join" onclick="join()"></input>
             <input type="button" id="leaveButton" value="Leave" onclick="leave()" disabled></input>
@@ -35,29 +46,31 @@
       </div>
       <div class="mainView">
         <div class="conductorUI">
-          <input type="button" id="startRecordingButton" value="Start Recording (R)" onclick="startRecordingButtonCallback()"></input>
+          <table style="width:100%; height:100%;">
+            <tr>
+              <td style="width:40%; vertical-align:middle;">
+                <!-- player for playing existing audio file-->
+                <audio controls id="fileAudio"></audio>
+                <input type="file" id="audioFileSelector" name="audioFileSelector" accept=".mp3, .weba"></input>
+              </td>
+              <td style="width:20%;">
+                <input type="button" id="startRecordingButton" value="Start Recording (R)" onclick="startRecordingButtonCallback()"></input>
+              </td>
+              <td style="width:40%;">
+              </td>
+            </tr>
+          </table>
         </div>
         <!-- players in tile -->
         <div class="conductorViewPlayerVideoDiv">
         </div>
       </div>
       <div class="bottomView">
-        <table style="width:100%; height:100%;">
-          <tr>
-            <td style="width:30%">
-              <!-- player for playing existing audio file-->
-              <audio controls id="fileAudio"></audio>
-              <input type="file" id="audioFileSelector" name="audioFileSelector" accept=".mp3, .weba"></input>
-            </td>
-            <td>
-              <!-- small conductor view at the bottom center -->
-              <div class="conductorViewLocalVideoDiv">
-                <video class="conductorViewLocalVideo" id="conductorViewLocalVideo" height="0" width="0" playsinline autoplay ></video>
-                <div id="conductorViewLocalNameDiv"></div>
-              </div>
-            </td>
-          </tr>
-        </table>
+        <!-- small conductor view at the bottom center -->
+        <div class="conductorViewLocalVideoDiv">
+          <video class="conductorViewLocalVideo" id="conductorViewLocalVideo" height="0" width="0" playsinline autoplay ></video>
+          <div id="conductorViewLocalNameDiv"></div>
+        </div>
       </div>
     </div>
     <!-- end of conductor view -->

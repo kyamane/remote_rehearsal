@@ -48,10 +48,10 @@ var muteStateBeforeRecording = false;
 var playGainNodes = [];
 
 const textHeight = parseFloat(window.getComputedStyle(document.body).fontSize) + 10;
-const conductorViewPlayerVideoWidth = 100;
-const conductorViewPlayerVideoHeight = 100;
-const conductorViewPlayerVideoNumColumns = 9;
-const conductorViewPlayerVideoNumRows = 5;
+var conductorViewPlayerVideoWidth = 100;
+var conductorViewPlayerVideoHeight = 100;
+var conductorViewPlayerVideoNumColumns = 6;
+var conductorViewPlayerVideoNumRows = 4;
 
 var peerConnectionConfig = {
     'iceServers': [
@@ -318,6 +318,8 @@ function leave() {
         while(linkDiv.hasChildNodes()) {
             linkDiv.removeChild(linkDiv.firstChild);
         }
+        var selection = document.getElementById("playerVideoLayoutSelection");
+        selection.disabled = false;
     }
     else {
         var div = document.querySelector(".playerViewConductorVideoDiv");
@@ -345,11 +347,43 @@ function join() {
         audioFileSelector.addEventListener("change", updateAudioFile);
         fileAudioElement = document.getElementById("fileAudio");
         fileAudioStream = fileAudioElement.captureStream();
-
+        // set up player video layout
         var parent_div = document.querySelector('.conductorViewPlayerVideoDiv');
+        var selection = document.getElementById("playerVideoLayoutSelection");
+        selection.disabled = true;
+        var layout_text = selection.value;
+        console.log("layout: ", layout_text);
+        var parent_width = parent_div.clientWidth;
+        var parent_height = parent_div.clientHeight;
+        if(layout_text == "one2one") {
+            conductorViewPlayerVideoNumRows = 1;
+            conductorViewPlayerVideoNumColumns = 1;
+        }
+        else if(layout_text == "small_chamb") {
+            conductorViewPlayerVideoNumRows = 1;
+            conductorViewPlayerVideoNumColumns = 5;
+        }
+        else if(layout_text == "large_chamb") {
+            conductorViewPlayerVideoNumRows = 3;
+            conductorViewPlayerVideoNumColumns = 4;
+        }
+        else if(layout_text == "string_orch") {
+            conductorViewPlayerVideoNumRows = 4;
+            conductorViewPlayerVideoNumColumns = 6;
+        }
+        else if(layout_text == "chamb_orch") {
+            conductorViewPlayerVideoNumRows = 5;
+            conductorViewPlayerVideoNumColumns = 8;
+        }
+        else if(layout_text == "full_orch") {
+            conductorViewPlayerVideoNumRows = 6;
+            conductorViewPlayerVideoNumColumns = 10;
+        }
+        conductorViewPlayerVideoWidth = parent_width / conductorViewPlayerVideoNumColumns;
+        conductorViewPlayerVideoHeight = parent_height / conductorViewPlayerVideoNumRows;
+        console.log("rows: ", conductorViewPlayerVideoNumRows, ", height: ", conductorViewPlayerVideoHeight, ", cols: ", conductorViewPlayerVideoNumColumns, ", width: ", conductorViewPlayerVideoWidth);
         parent_div.style.gridTemplateColumns = 'repeat(' + conductorViewPlayerVideoNumColumns.toString() + ', minmax(' + conductorViewPlayerVideoWidth.toString() + 'px, 1fr))';
         parent_div.style.gridTemplateRows = 'repeat(' + conductorViewPlayerVideoNumRows.toString() + ', minmax(' + conductorViewPlayerVideoHeight.toString() + 'px, 1fr))';
-        console.log("parent_div style: ", parent_div.style);
         // fill the grid with divs
         for(var i=0; i<conductorViewPlayerVideoNumRows; i++) {
             for(var j=0; j<conductorViewPlayerVideoNumColumns; j++) {
@@ -654,7 +688,7 @@ function join() {
         if(conductor) {
             // remote stream must be a player
             video.className = 'conductorViewPlayerVideo';
-            set_video_size(conductorViewPlayerVideoWidth, conductorViewPlayerVideoHeight, video);
+            set_video_size(conductorViewPlayerVideoWidth, conductorViewPlayerVideoHeight - textHeight, video);
             nameDiv.innerHTML = '<input type=\"checkbox\" onclick=\"playerAudioMuteCallback(this)\" id=\"audio_' + id + '\" name=\"audioOnCheckbox\" checked>' + names[id];
             // find the first available cell
             for(var i=0; i<conductorViewPlayerVideoNumRows; i++) {
@@ -715,6 +749,17 @@ function playerAudioMuteCallback(checkbox) {
     }
     else {
         playGainNodes[id].gain.value = 1.0;
+    }
+}
+
+function conductorCheckboxClicked(checkbox) {
+    var selection = document.getElementById("playerVideoLayoutSelection");
+    if(checkbox.checked) {
+        // allow choosing layout
+        selection.disabled = false;
+    }
+    else {
+        selection.disabled = true;
     }
 }
 
