@@ -27,12 +27,22 @@ div.bottomView{
 .conductorViewPlayerVideo {
   border: 2px solid red;
 }
+.conductorViewPlayerNameVideoDiv {
+  cursor: move;
+}
+.conductorViewPlayerNameVideoDiv.over {
+  border: 3px dotted #666;
+}
 .conductorViewPlayerVideoDiv {
   height: 100%;
   width: 100%;
   display: grid;
+/*
   grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   grid-template-rows: repeat(auto-fit, minmax(100px, 1fr));
+*/
+  grid-template-columns: repeat(7, minmax(100px, 1fr));
+  grid-template-rows: repeat(5, minmax(100px, 1fr));
 }
 .conductorViewLocalVideoDiv {
   height: 100%;

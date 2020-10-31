@@ -50,7 +50,8 @@ var playGainNodes = [];
 const textHeight = parseFloat(window.getComputedStyle(document.body).fontSize) + 10;
 const conductorViewPlayerVideoWidth = 100;
 const conductorViewPlayerVideoHeight = 100;
-
+const conductorViewPlayerVideoNumColumns = 9;
+const conductorViewPlayerVideoNumRows = 5;
 
 var peerConnectionConfig = {
     'iceServers': [
@@ -310,26 +311,22 @@ function leave() {
     // remove all videos except local
     if(conductor) {
         var div = document.querySelector(".conductorViewPlayerVideoDiv");
-        var c = div.children;
-        for(var i=0; i<c.length; i++) {
-            div.removeChild(c[i]);
+        while(div.hasChildNodes()) {
+            div.removeChild(div.firstChild);
         }
         var linkDiv = document.getElementById("videoLinkDiv");
-        var linkc = linkDiv.children;
-        for(var i=0; i<linkc.length; i++) {
-            linkDiv.removeChild(linkc[i]);
+        while(linkDiv.hasChildNodes()) {
+            linkDiv.removeChild(linkDiv.firstChild);
         }
     }
     else {
         var div = document.querySelector(".playerViewConductorVideoDiv");
-        var c = div.children;
-        for(var i=0; i<c.length; i++) {
-            div.removeChild(c[i]);
+        while(div.hasChildNodes()) {
+            div.removeChild(div.firstChild);
         }
         div = document.querySelector(".playerViewPlayerVideoDiv");
-        c = div.children;
-        for(var i=0; i<c.length; i++) {
-            div.removeChild(c[i]);
+        while(div.hasChildNodes()) {
+            div.removeChild(div.firstChild);
         }
     }
     if(socket) {
@@ -348,6 +345,63 @@ function join() {
         audioFileSelector.addEventListener("change", updateAudioFile);
         fileAudioElement = document.getElementById("fileAudio");
         fileAudioStream = fileAudioElement.captureStream();
+
+        var parent_div = document.querySelector('.conductorViewPlayerVideoDiv');
+        parent_div.style.gridTemplateColumns = 'repeat(' + conductorViewPlayerVideoNumColumns.toString() + ', minmax(' + conductorViewPlayerVideoWidth.toString() + 'px, 1fr))';
+        parent_div.style.gridTemplateRows = 'repeat(' + conductorViewPlayerVideoNumRows.toString() + ', minmax(' + conductorViewPlayerVideoHeight.toString() + 'px, 1fr))';
+        console.log("parent_div style: ", parent_div.style);
+        // fill the grid with divs
+        for(var i=0; i<conductorViewPlayerVideoNumRows; i++) {
+            for(var j=0; j<conductorViewPlayerVideoNumColumns; j++) {
+                var div_id = 'conductorViewPlayerNameVideoDiv_' + i.toString() + '_' + j.toString();
+                if(document.getElementById(div_id) == null) {
+                    var div = document.createElement('div');
+                    var dragSourceDiv;
+                    div.setAttribute('draggable', true);
+                    div.setAttribute('class', 'conductorViewPlayerNameVideoDiv');
+                    div.setAttribute('id', div_id);
+                    div.addEventListener('dragstart', function(e) {
+                        this.style.opacity = 0.4;
+                        dragSourceDiv = this;
+                    });
+                    div.addEventListener('dragend', function(s) {
+                        this.style.opacity = 1.0;
+                        dragSourceDiv = null;
+                        for(var k=0; k<parent_div.children.length; k++) {
+                            parent_div.children[k].classList.remove('over');
+                        }
+                    });
+                    div.addEventListener('dragover', function(e) {
+                        if(e.preventDefault) {
+                            e.preventDefault();
+                        }
+                    });
+                    div.addEventListener('drop', function(e) {
+                        e.stopPropagation();
+                        console.log("dragDrop: ", this.id);
+                        if(dragSourceDiv !== this) {
+                            console.log("source: ", dragSourceDiv.id);
+                            if(this.hasChildNodes()) {
+                                // if this cell already has a video?
+                            }
+                            else {
+                                while(dragSourceDiv.hasChildNodes()) {
+                                    this.appendChild(dragSourceDiv.firstChild);
+                                }
+                            }
+                        }
+                        return false;
+                    });
+                    div.addEventListener('dragenter', function(e) {
+                        this.classList.add('over');
+                    });
+                    div.addEventListener('dragleave', function(e) {
+                        this.classList.remove('over');
+                    });
+                    parent_div.appendChild(div);
+                }
+            }
+        }
 
 //        fileAudioElement.addEventListener('canplay', function(e) {
         fileAudioElement.addEventListener('canplaythrough', function(e) {
@@ -442,8 +496,6 @@ function join() {
             localAudioElement.setSinkId(audioDest).then(() => {
                 localAudioElement.srcObject = playAudioDestination.stream;
                 localAudioElement.addEventListener("canplay", event => {
-                    console.log("localAudioElement.play()");
-                    console.log("readyState (0): ", localAudioElement.readyState);
                     localAudioElement.play();
                 });
             });
@@ -597,19 +649,36 @@ function join() {
         video.autoplay    = true;
         video.muted       = true;
         video.playsinline = true;
-        nameDiv.innerHTML = names[id];
         var parent_div;
 
         if(conductor) {
             // remote stream must be a player
             video.className = 'conductorViewPlayerVideo';
-            parent_div = document.querySelector('.conductorViewPlayerVideoDiv');
             set_video_size(conductorViewPlayerVideoWidth, conductorViewPlayerVideoHeight, video);
+            nameDiv.innerHTML = '<input type=\"checkbox\" onclick=\"playerAudioMuteCallback(this)\" id=\"audio_' + id + '\" name=\"audioOnCheckbox\" checked>' + names[id];
+            // find the first available cell
+            for(var i=0; i<conductorViewPlayerVideoNumRows; i++) {
+                for(var j=0; j<conductorViewPlayerVideoNumColumns; j++) {
+                    var temp_div = document.getElementById('conductorViewPlayerNameVideoDiv_' + i.toString() + '_' + j.toString());
+                    if(temp_div.children.length == 0) {
+                        parent_div = temp_div;
+                        break;
+                    }
+                }
+                if(parent_div != null) break;
+            }
+            if(parent_div == null) {
+                console.log("view is full");
+            }
+            else {
+                console.log("parent_div found: ", parent_div.id);
+            }
         }
         else {
             // player view
             if(id == conductorId) {
                 video.className = 'playerViewConductorVideo';
+                nameDiv.innerHTML = names[id];
                 parent_div = document.querySelector('.playerViewConductorVideoDiv');
                 var p_height = parent_div.getBoundingClientRect().height - textHeight;
                 var p_width = parent_div.getBoundingClientRect().width;
@@ -617,6 +686,7 @@ function join() {
             }
             else {
                 video.className = 'playerViewPlayerVideo';
+                nameDiv.innerHTML = '<input type=\"checkbox\" onclick=\"playerAudioMuteCallback(this, ' + id + ')\" id=\"audio_' + id + '\" name=\"audioOnCheckbox\" checked>' + names[id];
                 var n_player_videos = Object.keys(connections).length - 1;
                 if(conductorId) {
                     n_player_videos = n_player_videos - 1;
@@ -631,9 +701,21 @@ function join() {
         div.appendChild(video);
         div.appendChild(nameDiv);
         parent_div.appendChild(div);
+
     }
     /////////////////////////////////////////
     startStream();
+}
+
+function playerAudioMuteCallback(checkbox) {
+    var id = checkbox.id.substring(6);  // remove audio_
+    console.log("mute player: ", id, ", checked: ", checkbox.checked);
+    if(checkbox.checked) {
+        playGainNodes[id].gain.value = 0.0;
+    }
+    else {
+        playGainNodes[id].gain.value = 1.0;
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
