@@ -166,10 +166,12 @@ function reset() {
     combinedStreamId = null;
 }
 
+/////////////////////////////////////////////////////////////////
+//////////////// handle message from server /////////////////////
+/////////////////////////////////////////////////////////////////
 function gotMessageFromServer(fromId, message) {
-    //Parse the incoming signal
     var signal = JSON.parse(message)
-    //Make sure it's not coming from yourself
+    // Make sure it's not coming from yourself
     if(fromId != socketId) {
 //        console.log("gotMessageFromServer: " + fromId + ", " + message);
         console.log("gotMessageFromServer: " + fromId);
@@ -230,6 +232,408 @@ function gotMessageFromServer(fromId, message) {
             }
         }
     }
+}
+
+/////////////////////////////////////////////////////////////////
+/////////////////// beginning of session ////////////////////////
+/////////////////////////////////////////////////////////////////
+function startSession(debug_mode) {
+    if(!debug_mode) {
+        document.getElementById("localAudioDiv").style = "display:none";
+    }
+    document.addEventListener('keydown', keyboardCallback);
+
+    // check if all required functions are available
+    if('mediaDevices' in navigator && 'getUserMedia' in navigator.mediaDevices) {
+        var audioInputSelection = document.getElementById("audioInputSelection");
+        var videoInputSelection = document.getElementById("videoInputSelection");
+        var audioOutputSelection = document.getElementById("audioOutputSelection");
+        navigator.mediaDevices.enumerateDevices()
+            .then(function(devices) {
+                devices.forEach(function(device) {
+                    console.log(device.kind + ": " + device.label + " id = " + device.deviceId);
+                    if(device.kind == "audioinput") {
+                        var option = document.createElement("option");
+                        option.text = device.label;
+                        option.value = device.deviceId;
+                        audioInputSelection.add(option);
+                    }
+                    else if(device.kind == "videoinput") {
+                        var option = document.createElement("option");
+                        option.text = device.label;
+                        option.value = device.deviceId;
+                        videoInputSelection.add(option);
+                    }
+                    else if(device.kind == "audiooutput") {
+                        var option = document.createElement("option");
+                        option.text = device.label;
+                        option.value = device.deviceId;
+                        audioOutputSelection.add(option);
+                    }
+                });
+            });
+    }
+    else {
+        alert("Sorry, your browser does not support mediaDevices() and/or getUserMedia()");
+        document.getElementById("joinButton").disabled = true;
+    }
+}
+
+function leave() {
+    statusText.innerHTML = "Leaving...";
+    if(localVideoStream) {
+        localVideoStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+    }
+    if(playAudioStream) {
+        playAudioStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+    }
+    if(localAudioStream) {
+        localAudioStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+    }
+    if(recordAudioStream) {
+        recordAudioStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+    }
+    if(oscillatorStream) {
+        oscillatorStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+    }
+    localAudioElement.srcObject = null;
+    // remove all videos except local
+    if(conductor) {
+        var div = document.querySelector(".conductorViewPlayerVideoDiv");
+        var c = div.children;
+        for(var i=0; i<c.length; i++) {
+            div.removeChild(c[i]);
+        }
+        var linkDiv = document.getElementById("videoLinkDiv");
+        var linkc = linkDiv.children;
+        for(var i=0; i<linkc.length; i++) {
+            linkDiv.removeChild(linkc[i]);
+        }
+    }
+    else {
+        var div = document.querySelector(".playerViewConductorVideoDiv");
+        var c = div.children;
+        for(var i=0; i<c.length; i++) {
+            div.removeChild(c[i]);
+        }
+        div = document.querySelector(".playerViewPlayerVideoDiv");
+        c = div.children;
+        for(var i=0; i<c.length; i++) {
+            div.removeChild(c[i]);
+        }
+    }
+    if(socket) {
+        socket.disconnect();
+    }
+    audioContext.close();
+    reset();
+}
+
+function join() {
+    statusText.innerHTML = "Connecting...";
+    conductor = document.getElementById("conductorCheckbox").checked;
+    if(conductor) {
+        document.getElementById("conductorViewDiv").style.display = "block";
+        audioFileSelector = document.getElementById("audioFileSelector");
+        audioFileSelector.addEventListener("change", updateAudioFile);
+        fileAudioElement = document.getElementById("fileAudio");
+        fileAudioStream = fileAudioElement.captureStream();
+
+//        fileAudioElement.addEventListener('canplay', function(e) {
+        fileAudioElement.addEventListener('canplaythrough', function(e) {
+            fileAudioStream = fileAudioElement.captureStream();
+            broadcastStream('file_stream_id', fileAudioStream);
+        });
+
+    }
+    else {
+        document.getElementById("playerViewDiv").style.display = "block";
+    }
+    localName = document.getElementById("nameText").value;
+    console.log("joined: localName=" + localName + ", conductor=" + conductor);
+    document.getElementById("joinButton").disabled = true;
+    document.getElementById("leaveButton").disabled = false;
+
+    localAudioElement = document.getElementById("localAudio");
+    if(conductor) {
+        localVideo = document.getElementById("conductorViewLocalVideo");
+    }
+    else {
+        localVideo = document.getElementById("playerViewLocalVideo");
+    }
+    localVideo.oncanplay = setupSocket;
+    async function startStream() {
+        // extract the chosen video device
+        var videoInputSelection = document.getElementById("videoInputSelection");
+        var videoSource = videoInputSelection.value;
+        if(videoSource == "none") videoSource = "default";
+        console.log("videoSource: ", videoSource);
+        const videoConstraints = {
+            video: {deviceId: videoSource},
+            audio: false
+        };
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia(videoConstraints);
+            getUserMediaSuccess(stream);
+        }
+        catch(e) {
+            console.log("getUserMedia failed: " + e);
+        }
+    }
+
+    function getUserMediaSuccess(stream) {
+        localVideoStream = stream;
+        // set audio input
+        var audioInputSelection = document.getElementById("audioInputSelection");
+        var audioSource = audioInputSelection.value;
+        if(audioSource == "none") audioSource = "default";
+        console.log("audioSource: ", audioSource);
+        const audioConstraints = {
+            video: false,
+            audio: {
+                deviceId: audioSource,
+                autoGainControl: false,
+                noiseSuppression: false,
+                echoCancellation: false,
+                latency: {ideal: 0.01, max: 0.1},
+                channelCount: {ideal: 2, min: 1}
+            }
+        };
+
+        navigator.mediaDevices.getUserMedia(audioConstraints).then(function(audioStream) {
+            var parent_div = localVideo.parentElement;
+            var div_height = parent_div.getBoundingClientRect().height - textHeight;
+            var div_width = parent_div.getBoundingClientRect().width;
+            set_video_size(div_width, div_height, localVideo);
+            localVideo.srcObject = stream;
+
+            localAudioStream = audioStream;
+            // create a common AudioContext and separate destinations for played and recorded streams
+            audioContext = new AudioContext();
+            playAudioDestination = audioContext.createMediaStreamDestination();
+            recordAudioDestination = audioContext.createMediaStreamDestination();
+            if(conductor) oscillatorDestination = audioContext.createMediaStreamDestination();
+
+            // localAudioStream goes to record
+            var localAudioSource = audioContext.createMediaStreamSource(localAudioStream);
+            localAudioSource.connect(recordAudioDestination);
+
+            if(conductor) {
+                document.getElementById("conductorViewLocalNameDiv").innerHTML = localName;
+            }
+            else {
+                document.getElementById("playerViewLocalNameDiv").innerHTML = localName;
+            }
+            // set audio output
+            var audioOutputSelection = document.getElementById("audioOutputSelection");
+            var audioDest = audioOutputSelection.value;
+            if(audioDest == "none") audioDest = "default";
+            console.log("audioDest: ", audioDest);
+            localAudioElement.setSinkId(audioDest).then(() => {
+                localAudioElement.srcObject = playAudioDestination.stream;
+                localAudioElement.addEventListener("canplay", event => {
+                    console.log("localAudioElement.play()");
+                    console.log("readyState (0): ", localAudioElement.readyState);
+                    localAudioElement.play();
+                });
+            });
+            playAudioStream = playAudioDestination.stream;
+            recordAudioStream = recordAudioDestination.stream;
+            if(conductor) oscillatorStream = oscillatorDestination.stream;
+        });
+    }
+
+    function setupSocket() {
+        socket = io.connect(config.host, {secure: true});
+//        socket = io.connect(config.host, {rejectUnauthorized: false, secure: true});
+        socket.on('signal', gotMessageFromServer);
+        socket.on('connect', onConnect);
+        socket.on('video-blob', receiveLocalVideo);
+        socket.on('audio-blob', receiveLocalAudio);
+
+        statusText.innerHTML = "Connected";
+
+        function onConnect() {
+            socketId = socket.id;
+            console.log("onConnect: socketId = " + socketId);
+            // send my name
+            names[socketId] = localName;
+            if(conductor) conductorId = socketId;
+            socket.on('user-left', function(id) {
+                console.log("user-left: " + id);
+                var video = document.querySelector('[data-socket="'+ id +'"]');
+                var parentDiv = video.parentElement;
+                video.parentElement.parentElement.removeChild(parentDiv);
+                userLeft(id);
+            });
+            socket.on('user-joined', function(id, count, clients) {
+                console.log("user-joined: " + id + ", " + count + ", " + clients);
+                clients.forEach(function(socketListId) {
+                    if(!connections[socketListId]) {
+                        connections[socketListId] = new RTCPeerConnection(peerConnectionConfig);
+                        //Wait for their ice candidate
+                        connections[socketListId].onicecandidate = function() {
+                            if(event.candidate != null) {
+                                socket.emit('signal', socketListId, JSON.stringify({'ice': event.candidate}));
+                            }
+                        }
+                        // wait for other's video streams
+                        connections[socketListId].onaddstream = function() {
+                            gotRemoteStream(event, socketListId);
+                        }
+                        if(conductor) {
+                            // conductor sends the track of the oscillatorStream
+                            socket.emit('signal', socketListId, JSON.stringify({'sync_stream_id': oscillatorStream.id}));
+                            console.log("sending oscillator stream to = ", socketListId, ", stream = ", oscillatorStream);
+                            connections[socketListId].addStream(oscillatorStream);
+                        }
+                        // send the local video and audio streams
+                        connections[socketListId].addStream(localVideoStream);
+                        connections[socketListId].addStream(localAudioStream);
+
+                        //send local name
+                        socket.emit('signal', socketListId, JSON.stringify({'name': localName}));
+                        // send conductor
+                        if(conductor) {
+                            socket.emit('signal', socketListId, JSON.stringify({'conductor': 'true'}));
+                        }
+                        else {
+                            socket.emit('signal', socketListId, JSON.stringify({'conductor': 'false'}));
+                        }
+                    }
+                });
+                //Create an offer to connect with your local description
+                if(count >= 2) {
+                    connections[id].createOffer().then(function(description) {
+                        connections[id].setLocalDescription(description).then(function() {
+                            socket.emit('signal', id, JSON.stringify({'sdp': connections[id].localDescription}));
+                        }).catch(e => console.log(e));
+                    });
+                }
+            });
+        }
+    }
+
+    function gotRemoteStream(event, id) {
+        console.log("gotRemoteStream: from = ", id, ", stream = ", event.stream);
+        // process audio stream
+        if(event.stream.getVideoTracks().length == 0) {
+            // sync (oscillator) stream
+            if(id == conductorId && event.stream.id == oscillatorStreamId) {
+                console.log("this is sync audio");
+                // add sync audio stream to record (and play)
+                var rAudioElement = new Audio();
+                rAudioElement.srcObject = event.stream;
+                var rGainNode = audioContext.createGain();
+                rGainNode.gain.value = 1.0;
+                rAudioElement.onloadedmetadata = function() {
+                    var rAudioSource = audioContext.createMediaStreamSource(rAudioElement.srcObject);
+                    rAudioSource.connect(rGainNode);
+                    rGainNode.connect(recordAudioDestination);
+                    rGainNode.connect(playAudioDestination);  // to be removed?
+                }
+            }
+            else if(id == conductorId && event.stream.id == fileAudioStreamId) {
+                console.log("this is file audio");
+                // add file audio stream to play
+                if(fileAudioGainNode != null) {
+                    fileAudioGainNode.disconnect();
+                    fileAudioSource.disconnect();
+                    console.log("previous stream removed");
+                }
+                var fAudioElement = new Audio();
+                fAudioElement.srcObject = event.stream;
+                fileAudioGainNode = audioContext.createGain();
+                fileAudioGainNode.gain.value = 1.0;
+                fAudioElement.onloadedmetadata = function() {
+                    fileAudioSource = audioContext.createMediaStreamSource(fAudioElement.srcObject);
+                    fileAudioSource.connect(fileAudioGainNode);
+                    fileAudioGainNode.connect(playAudioDestination);
+                }
+            }
+            else {
+                console.log("this is audio");
+                // add everything including conductor's to playAudio
+                var audioElement = new Audio();
+                audioElement.srcObject = event.stream;
+                playGainNodes[id] = audioContext.createGain();
+                playGainNodes[id].gain.value = 1.0;
+                audioElement.onloadedmetadata = function() {
+                    var audioSource = audioContext.createMediaStreamSource(audioElement.srcObject);
+                    audioSource.connect(playGainNodes[id]);
+                    playGainNodes[id].connect(playAudioDestination);
+                }
+            }
+            return;
+        }
+
+        // combined video
+        if(id == conductorId && event.stream.id == combinedStreamId) {
+            console.log("this is combined video");
+            if(confirm("Combined video received. Play?")) {
+                var win = window.open("", "_blank");
+                playCombinedVideoStream(win, event.stream);
+            }
+            return;
+        }
+
+        // live video
+        // create the video and surrounding divs
+        var video = document.createElement('video');
+        var div = document.createElement('div');
+        var nameDiv = document.createElement('div');
+        video.setAttribute('data-socket', id);
+        video.srcObject = event.stream;
+        video.autoplay    = true;
+        video.muted       = true;
+        video.playsinline = true;
+        nameDiv.innerHTML = names[id];
+        var parent_div;
+
+        if(conductor) {
+            // remote stream must be a player
+            video.className = 'conductorViewPlayerVideo';
+            parent_div = document.querySelector('.conductorViewPlayerVideoDiv');
+            set_video_size(conductorViewPlayerVideoWidth, conductorViewPlayerVideoHeight, video);
+        }
+        else {
+            // player view
+            if(id == conductorId) {
+                video.className = 'playerViewConductorVideo';
+                parent_div = document.querySelector('.playerViewConductorVideoDiv');
+                var p_height = parent_div.getBoundingClientRect().height - textHeight;
+                var p_width = parent_div.getBoundingClientRect().width;
+                set_video_size(p_width, p_height, video);
+            }
+            else {
+                video.className = 'playerViewPlayerVideo';
+                var n_player_videos = Object.keys(connections).length - 1;
+                if(conductorId) {
+                    n_player_videos = n_player_videos - 1;
+                }
+                parent_div = document.querySelector('.playerViewPlayerVideoDiv');
+                var p_height = parent_div.getBoundingClientRect().height - textHeight;
+                var p_width = parent_div.getBoundingClientRect().width;
+                var v_width = p_width / n_player_videos;
+                set_video_size(v_width, p_height, video);
+            }
+        }
+        div.appendChild(video);
+        div.appendChild(nameDiv);
+        parent_div.appendChild(div);
+    }
+    /////////////////////////////////////////
+    startStream();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -631,404 +1035,5 @@ function playCombinedVideoStream(win, stream) {
     combinedVideoElement.playsinline = true;
     combinedVideoElement.controls = true;
     win.document.body.appendChild(combinedVideoElement);
-}
-
-function startSession(debug_mode) {
-    if(!debug_mode) {
-        document.getElementById("localAudioDiv").style = "display:none";
-    }
-    document.addEventListener('keydown', keyboardCallback);
-
-    // check if all required functions are available
-    if('mediaDevices' in navigator && 'getUserMedia' in navigator.mediaDevices) {
-        var audioInputSelection = document.getElementById("audioInputSelection");
-        var videoInputSelection = document.getElementById("videoInputSelection");
-        var audioOutputSelection = document.getElementById("audioOutputSelection");
-        navigator.mediaDevices.enumerateDevices()
-            .then(function(devices) {
-                devices.forEach(function(device) {
-                    console.log(device.kind + ": " + device.label + " id = " + device.deviceId);
-                    if(device.kind == "audioinput") {
-                        var option = document.createElement("option");
-                        option.text = device.label;
-                        option.value = device.deviceId;
-                        audioInputSelection.add(option);
-                    }
-                    else if(device.kind == "videoinput") {
-                        var option = document.createElement("option");
-                        option.text = device.label;
-                        option.value = device.deviceId;
-                        videoInputSelection.add(option);
-                    }
-                    else if(device.kind == "audiooutput") {
-                        var option = document.createElement("option");
-                        option.text = device.label;
-                        option.value = device.deviceId;
-                        audioOutputSelection.add(option);
-                    }
-                });
-            });
-    }
-    else {
-        alert("Sorry, your browser does not support mediaDevices() and/or getUserMedia()");
-        document.getElementById("joinButton").disabled = true;
-    }
-}
-
-function leave() {
-    statusText.innerHTML = "Leaving...";
-    if(localVideoStream) {
-        localVideoStream.getTracks().forEach(function(track) {
-            track.stop();
-        });
-    }
-    if(playAudioStream) {
-        playAudioStream.getTracks().forEach(function(track) {
-            track.stop();
-        });
-    }
-    if(localAudioStream) {
-        localAudioStream.getTracks().forEach(function(track) {
-            track.stop();
-        });
-    }
-    if(recordAudioStream) {
-        recordAudioStream.getTracks().forEach(function(track) {
-            track.stop();
-        });
-    }
-    if(oscillatorStream) {
-        oscillatorStream.getTracks().forEach(function(track) {
-            track.stop();
-        });
-    }
-    localAudioElement.srcObject = null;
-    // remove all videos except local
-    if(conductor) {
-        var div = document.querySelector(".conductorViewPlayerVideoDiv");
-        var c = div.children;
-        for(var i=0; i<c.length; i++) {
-            div.removeChild(c[i]);
-        }
-        var linkDiv = document.getElementById("videoLinkDiv");
-        var linkc = linkDiv.children;
-        for(var i=0; i<linkc.length; i++) {
-            linkDiv.removeChild(linkc[i]);
-        }
-    }
-    else {
-        var div = document.querySelector(".playerViewConductorVideoDiv");
-        var c = div.children;
-        for(var i=0; i<c.length; i++) {
-            div.removeChild(c[i]);
-        }
-        div = document.querySelector(".playerViewPlayerVideoDiv");
-        c = div.children;
-        for(var i=0; i<c.length; i++) {
-            div.removeChild(c[i]);
-        }
-    }
-    if(socket) {
-        socket.disconnect();
-    }
-    audioContext.close();
-    reset();
-}
-
-function join() {
-    statusText.innerHTML = "Connecting...";
-    conductor = document.getElementById("conductorCheckbox").checked;
-    if(conductor) {
-        document.getElementById("conductorViewDiv").style.display = "block";
-        audioFileSelector = document.getElementById("audioFileSelector");
-        audioFileSelector.addEventListener("change", updateAudioFile);
-        fileAudioElement = document.getElementById("fileAudio");
-        fileAudioStream = fileAudioElement.captureStream();
-
-//        fileAudioElement.addEventListener('canplay', function(e) {
-        fileAudioElement.addEventListener('canplaythrough', function(e) {
-            fileAudioStream = fileAudioElement.captureStream();
-            broadcastStream('file_stream_id', fileAudioStream);
-        });
-
-    }
-    else {
-        document.getElementById("playerViewDiv").style.display = "block";
-    }
-    localName = document.getElementById("nameText").value;
-    console.log("joined: localName=" + localName + ", conductor=" + conductor);
-    document.getElementById("joinButton").disabled = true;
-    document.getElementById("leaveButton").disabled = false;
-
-    localAudioElement = document.getElementById("localAudio");
-    if(conductor) {
-        localVideo = document.getElementById("conductorViewLocalVideo");
-    }
-    else {
-        localVideo = document.getElementById("playerViewLocalVideo");
-    }
-    localVideo.oncanplay = setupSocket;
-    async function startStream() {
-        // extract the chosen video device
-        var videoInputSelection = document.getElementById("videoInputSelection");
-        var videoSource = videoInputSelection.value;
-        if(videoSource == "none") videoSource = "default";
-        console.log("videoSource: ", videoSource);
-        const videoConstraints = {
-            video: {deviceId: videoSource},
-            audio: false
-        };
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia(videoConstraints);
-            getUserMediaSuccess(stream);
-        }
-        catch(e) {
-            console.log("getUserMedia failed: " + e);
-        }
-    }
-
-    function getUserMediaSuccess(stream) {
-        localVideoStream = stream;
-        // set audio input
-        var audioInputSelection = document.getElementById("audioInputSelection");
-        var audioSource = audioInputSelection.value;
-        if(audioSource == "none") audioSource = "default";
-        console.log("audioSource: ", audioSource);
-        const audioConstraints = {
-            video: false,
-            audio: {
-                deviceId: audioSource,
-                autoGainControl: false,
-                noiseSuppression: false,
-                echoCancellation: false,
-                latency: {ideal: 0.01, max: 0.1},
-                channelCount: {ideal: 2, min: 1}
-            }
-        };
-
-        navigator.mediaDevices.getUserMedia(audioConstraints).then(function(audioStream) {
-            var parent_div = localVideo.parentElement;
-            var div_height = parent_div.getBoundingClientRect().height - textHeight;
-            var div_width = parent_div.getBoundingClientRect().width;
-            set_video_size(div_width, div_height, localVideo);
-            localVideo.srcObject = stream;
-
-            localAudioStream = audioStream;
-            // create a common AudioContext and separate destinations for played and recorded streams
-            audioContext = new AudioContext();
-            playAudioDestination = audioContext.createMediaStreamDestination();
-            recordAudioDestination = audioContext.createMediaStreamDestination();
-            if(conductor) oscillatorDestination = audioContext.createMediaStreamDestination();
-
-            // localAudioStream goes to record
-            var localAudioSource = audioContext.createMediaStreamSource(localAudioStream);
-            localAudioSource.connect(recordAudioDestination);
-
-            if(conductor) {
-                document.getElementById("conductorViewLocalNameDiv").innerHTML = localName;
-            }
-            else {
-                document.getElementById("playerViewLocalNameDiv").innerHTML = localName;
-            }
-            // set audio output
-            var audioOutputSelection = document.getElementById("audioOutputSelection");
-            var audioDest = audioOutputSelection.value;
-            if(audioDest == "none") audioDest = "default";
-            console.log("audioDest: ", audioDest);
-            localAudioElement.setSinkId(audioDest).then(() => {
-                localAudioElement.srcObject = playAudioDestination.stream;
-                localAudioElement.addEventListener("canplay", event => {
-                    console.log("localAudioElement.play()");
-                    console.log("readyState (0): ", localAudioElement.readyState);
-                    localAudioElement.play();
-                });
-            });
-            playAudioStream = playAudioDestination.stream;
-            recordAudioStream = recordAudioDestination.stream;
-            if(conductor) oscillatorStream = oscillatorDestination.stream;
-        });
-    }
-
-    function setupSocket() {
-        socket = io.connect(config.host, {secure: true});
-//        socket = io.connect(config.host, {rejectUnauthorized: false, secure: true});
-        socket.on('signal', gotMessageFromServer);
-        socket.on('connect', onConnect);
-        socket.on('video-blob', receiveLocalVideo);
-        socket.on('audio-blob', receiveLocalAudio);
-
-        statusText.innerHTML = "Connected";
-
-        function onConnect() {
-            socketId = socket.id;
-            console.log("onConnect: socketId = " + socketId);
-            // send my name
-            names[socketId] = localName;
-            if(conductor) conductorId = socketId;
-            socket.on('user-left', function(id) {
-                console.log("user-left: " + id);
-                var video = document.querySelector('[data-socket="'+ id +'"]');
-                var parentDiv = video.parentElement;
-                video.parentElement.parentElement.removeChild(parentDiv);
-                userLeft(id);
-            });
-            socket.on('user-joined', function(id, count, clients) {
-                console.log("user-joined: " + id + ", " + count + ", " + clients);
-                clients.forEach(function(socketListId) {
-                    if(!connections[socketListId]) {
-                        connections[socketListId] = new RTCPeerConnection(peerConnectionConfig);
-                        //Wait for their ice candidate
-                        connections[socketListId].onicecandidate = function() {
-                            if(event.candidate != null) {
-                                socket.emit('signal', socketListId, JSON.stringify({'ice': event.candidate}));
-                            }
-                        }
-                        // wait for other's video streams
-                        connections[socketListId].onaddstream = function() {
-                            gotRemoteStream(event, socketListId);
-                        }
-                        if(conductor) {
-                            // conductor sends the track of the oscillatorStream
-                            socket.emit('signal', socketListId, JSON.stringify({'sync_stream_id': oscillatorStream.id}));
-                            console.log("sending oscillator stream to = ", socketListId, ", stream = ", oscillatorStream);
-                            connections[socketListId].addStream(oscillatorStream);
-                        }
-                        // send the local video and audio streams
-                        connections[socketListId].addStream(localVideoStream);
-                        connections[socketListId].addStream(localAudioStream);
-
-                        //send local name
-                        socket.emit('signal', socketListId, JSON.stringify({'name': localName}));
-                        // send conductor
-                        if(conductor) {
-                            socket.emit('signal', socketListId, JSON.stringify({'conductor': 'true'}));
-                        }
-                        else {
-                            socket.emit('signal', socketListId, JSON.stringify({'conductor': 'false'}));
-                        }
-                    }
-                });
-                //Create an offer to connect with your local description
-                if(count >= 2) {
-                    connections[id].createOffer().then(function(description) {
-                        connections[id].setLocalDescription(description).then(function() {
-                            socket.emit('signal', id, JSON.stringify({'sdp': connections[id].localDescription}));
-                        }).catch(e => console.log(e));
-                    });
-                }
-            });
-        }
-    }
-
-    function gotRemoteStream(event, id) {
-        console.log("gotRemoteStream: from = ", id, ", stream = ", event.stream);
-        // process audio stream
-        if(event.stream.getVideoTracks().length == 0) {
-            // sync (oscillator) stream
-            if(id == conductorId && event.stream.id == oscillatorStreamId) {
-                console.log("this is sync audio");
-                // add sync audio stream to record (and play)
-                var rAudioElement = new Audio();
-                rAudioElement.srcObject = event.stream;
-                var rGainNode = audioContext.createGain();
-                rGainNode.gain.value = 1.0;
-                rAudioElement.onloadedmetadata = function() {
-                    var rAudioSource = audioContext.createMediaStreamSource(rAudioElement.srcObject);
-                    rAudioSource.connect(rGainNode);
-                    rGainNode.connect(recordAudioDestination);
-                    rGainNode.connect(playAudioDestination);  // to be removed?
-                }
-            }
-            else if(id == conductorId && event.stream.id == fileAudioStreamId) {
-                console.log("this is file audio");
-                // add file audio stream to play
-                if(fileAudioGainNode != null) {
-                    fileAudioGainNode.disconnect();
-                    fileAudioSource.disconnect();
-                    console.log("previous stream removed");
-                }
-                var fAudioElement = new Audio();
-                fAudioElement.srcObject = event.stream;
-                fileAudioGainNode = audioContext.createGain();
-                fileAudioGainNode.gain.value = 1.0;
-                fAudioElement.onloadedmetadata = function() {
-                    fileAudioSource = audioContext.createMediaStreamSource(fAudioElement.srcObject);
-                    fileAudioSource.connect(fileAudioGainNode);
-                    fileAudioGainNode.connect(playAudioDestination);
-                }
-            }
-            else {
-                console.log("this is audio");
-                // add everything including conductor's to playAudio
-                var audioElement = new Audio();
-                audioElement.srcObject = event.stream;
-                playGainNodes[id] = audioContext.createGain();
-                playGainNodes[id].gain.value = 1.0;
-                audioElement.onloadedmetadata = function() {
-                    var audioSource = audioContext.createMediaStreamSource(audioElement.srcObject);
-                    audioSource.connect(playGainNodes[id]);
-                    playGainNodes[id].connect(playAudioDestination);
-                }
-            }
-            return;
-        }
-
-        // combined video
-        if(id == conductorId && event.stream.id == combinedStreamId) {
-            console.log("this is combined video");
-            if(confirm("Combined video received. Play?")) {
-                var win = window.open("", "_blank");
-                playCombinedVideoStream(win, event.stream);
-            }
-            return;
-        }
-
-        // live video
-        // create the video and surrounding divs
-        var video = document.createElement('video');
-        var div = document.createElement('div');
-        var nameDiv = document.createElement('div');
-        video.setAttribute('data-socket', id);
-        video.srcObject = event.stream;
-        video.autoplay    = true;
-        video.muted       = true;
-        video.playsinline = true;
-        nameDiv.innerHTML = names[id];
-        var parent_div;
-
-        if(conductor) {
-            // remote stream must be a player
-            video.className = 'conductorViewPlayerVideo';
-            parent_div = document.querySelector('.conductorViewPlayerVideoDiv');
-            set_video_size(conductorViewPlayerVideoWidth, conductorViewPlayerVideoHeight, video);
-        }
-        else {
-            // player view
-            if(id == conductorId) {
-                video.className = 'playerViewConductorVideo';
-                parent_div = document.querySelector('.playerViewConductorVideoDiv');
-                var p_height = parent_div.getBoundingClientRect().height - textHeight;
-                var p_width = parent_div.getBoundingClientRect().width;
-                set_video_size(p_width, p_height, video);
-            }
-            else {
-                video.className = 'playerViewPlayerVideo';
-                var n_player_videos = Object.keys(connections).length - 1;
-                if(conductorId) {
-                    n_player_videos = n_player_videos - 1;
-                }
-                parent_div = document.querySelector('.playerViewPlayerVideoDiv');
-                var p_height = parent_div.getBoundingClientRect().height - textHeight;
-                var p_width = parent_div.getBoundingClientRect().width;
-                var v_width = p_width / n_player_videos;
-                set_video_size(v_width, p_height, video);
-            }
-        }
-        div.appendChild(video);
-        div.appendChild(nameDiv);
-        parent_div.appendChild(div);
-    }
-    /////////////////////////////////////////
-    startStream();
 }
 
