@@ -2,7 +2,7 @@
 Fast remote conference system for music rehearsals
 
 ## Goal
-Enable remote rehearsals of music ensembles, which is impossible with off-the-shelf teleconference systems due to large and varying delays.
+Enable remote rehearsals of classical music ensembles, which is impossible with off-the-shelf teleconference systems due to large and varying delays.
 
 ## Features
 * Minimum latency by using a dedicated signaling server and turning off all audio processing (auto gain control, noise suppression, echo cancellation)
@@ -11,6 +11,8 @@ Enable remote rehearsals of music ensembles, which is impossible with off-the-sh
   * Players: conductor displayed in the large center area; other players at the bottom
 * Automatic sync/merge of conductor/player videos + instant replay of the merged video
 * Conductor can share audio from a file (e.g. to play along)
+* Conductor can adjust the player feed layout by drag-and-drop (e.g. to match the standard orchestra layout)
+* Different layouts available from one-to-one lesson to a full orchestra up to 60 players
 
 ## Building and Running
 ### Signaling server
@@ -88,5 +90,6 @@ Here is a graphical representation:
 
 ## Future Plan
 - [ ] Turn on/off audio of individual player
-- [ ] In the conductor view, arrange the player videos in the standard orchestra layout.
+- [ ] ~In the conductor view, arrange the player videos in the standard orchestra layout.~
+- [X] In the conductor view, enable rearranging player videos by drag-and-drop.
 - [ ] Conductor movement prediction: 1) build a (DNN?) model of conductor movement, perhaps using data from skeleton tracking with Azure Kinect; 2) learn a model to reconstruct conductor appearance from skeleton movement; 3) during rehearsal, show the conductor movement 2T seconds ahead of real time to the players, where T is the one-way latency between the conductor and players. Theoretically, the conductor should hear the sound like in an in-person rehearsal.
