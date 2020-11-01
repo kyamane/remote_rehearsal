@@ -40,10 +40,13 @@ Again, you'll need an SSL server with a verified certificate to connection from 
 
 ## Usage
 1. Echo cancellation is turned off, so make sure that the microphone does not pick up the sound from the system (i.e. always use a headset). 
-1. Open the main HTML file in the latest version of Chrome.
-1. Input your name to the text box, check the conductor box if you are the conductor, and click "Join."
-Note that the behavior in case multiple conductors exist in the rehearsal is undefined ;)
-1. The conductor interface inlcudes a "Record" button. By pressing this button, you can record all player video/audio and generate a synchronized video.
+1. Open the main HTML file in the latest version of Chrome. The initial interface shows up:
+   <img alt="rr_top_control" src="./resource/rr_top_control.png" width="900">
+1. Select the audio and video devices as necessary. Input your name to the text box, check the conductor box and select the player layout if you are the conductor, and click "Join." Note that the behavior in case multiple conductors exist in the rehearsal is undefined ;)
+1. The conductor view looks like this. To share an audio file (e.g. to play along), use the audio player. The player videos can be moved by drag-and-drop. By clicking the "Record" button, you can sychronize and combine videos from all players. Individual players can be muted by unchecking the checkbox next to the player's name.
+   <img alt="rr_conductor_view" src="./resource/rr_conductor_view.png" width="900">
+1. The player view looks like this. The conductor's video feed is displayed prominently in the middle. Other players' videos are displayed at the bottom. 
+   <img alt="rr_player_view" src="./resource/rr_player_view.png" width="900">
 1. Click "Leave" to leave the rehearsal.
 
 ## Video Sync Details
