@@ -2,7 +2,7 @@
 Fast remote conference system for music rehearsals
 
 ## Goal
-Enable remote rehearsals of music ensembles, which is impossible with off-the-shelf teleconference systems due to large and varying delays.
+Enable remote rehearsals of classical music ensembles, which is impossible with off-the-shelf teleconference systems due to large and varying delays.
 
 ## Features
 * Minimum latency by using a dedicated signaling server and turning off all audio processing (auto gain control, noise suppression, echo cancellation)
@@ -11,6 +11,8 @@ Enable remote rehearsals of music ensembles, which is impossible with off-the-sh
   * Players: conductor displayed in the large center area; other players at the bottom
 * Automatic sync/merge of conductor/player videos + instant replay of the merged video
 * Conductor can share audio from a file (e.g. to play along)
+* Conductor can adjust the player feed layout by drag-and-drop (e.g. to match the standard orchestra layout)
+* Different layouts available from one-to-one lesson to a full orchestra up to 60 players
 
 ## Building and Running
 ### Signaling server
@@ -40,10 +42,13 @@ Again, you'll need an SSL server with a verified certificate to connection from 
 
 ## Usage
 1. Echo cancellation is turned off, so make sure that the microphone does not pick up the sound from the system (i.e. always use a headset). 
-1. Open the main HTML file in the latest version of Chrome.
-1. Input your name to the text box, check the conductor box if you are the conductor, and click "Join."
-Note that the behavior in case multiple conductors exist in the rehearsal is undefined ;)
-1. The conductor interface inlcudes a "Record" button. By pressing this button, you can record all player video/audio and generate a synchronized video.
+1. Open the main HTML file in the latest version of Chrome. The initial interface shows up:
+   <img alt="rr_top_control" src="./resource/rr_top_control.png" width="900">
+1. Select the audio and video devices as necessary. Input your name to the text box, check the conductor box and select the player layout if you are the conductor, and click "Join." Note that the behavior in case multiple conductors exist in the rehearsal is undefined ;)
+1. The conductor view looks like this. To share an audio file (e.g. to play along), use the audio player. The player videos can be moved by drag-and-drop. By clicking the "Record" button, you can sychronize and combine videos from all players. Individual players can be muted by unchecking the checkbox next to the player's name.
+   <img alt="rr_conductor_view" src="./resource/rr_conductor_view.png" width="900">
+1. The player view looks like this. The conductor's video feed is displayed prominently in the middle. Other players' videos are displayed at the bottom. 
+   <img alt="rr_player_view" src="./resource/rr_player_view.png" width="900">
 1. Click "Leave" to leave the rehearsal.
 
 ## Video Sync Details
@@ -84,6 +89,7 @@ Here is a graphical representation:
 1. The video and audio data are merged using [ffmpeg](https://ffmpeg.org/).
 
 ## Future Plan
-- [ ] Turn on/off audio of individual player
-- [ ] In the conductor view, arrange the player videos in the standard orchestra layout.
+- [X] Turn on/off audio of individual player
+- [ ] ~In the conductor view, arrange the player videos in the standard orchestra layout.~
+- [X] In the conductor view, enable rearranging player videos by drag-and-drop.
 - [ ] Conductor movement prediction: 1) build a (DNN?) model of conductor movement, perhaps using data from skeleton tracking with Azure Kinect; 2) learn a model to reconstruct conductor appearance from skeleton movement; 3) during rehearsal, show the conductor movement 2T seconds ahead of real time to the players, where T is the one-way latency between the conductor and players. Theoretically, the conductor should hear the sound like in an in-person rehearsal.
