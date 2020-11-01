@@ -159,11 +159,13 @@ function reset() {
     playGainNodes = [];
 
     audioFileSelector = null;
+    fileAudioElement.src = "";
     fileAudioElement = null;
     fileAudioStream = null;
     fileAudioStreamId = null;
     fileAudioGainNode = null;
     fileAudioSource = null;
+    document.getElementById("audioFileSelector").value = "";
     combinedStreamId = null;
 }
 
@@ -304,6 +306,11 @@ function leave() {
     }
     if(oscillatorStream) {
         oscillatorStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+    }
+    if(fileAudioStream) {
+        fileAudioStream.getTracks().forEach(function(track) {
             track.stop();
         });
     }

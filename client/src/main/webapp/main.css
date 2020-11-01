@@ -28,7 +28,10 @@ div.bottomView{
   border: 2px solid red;
 }
 .conductorViewPlayerNameVideoDiv {
-  cursor: move;
+    cursor: move;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 .conductorViewPlayerNameVideoDiv.over {
   border: 3px dotted #666;
@@ -36,6 +39,9 @@ div.bottomView{
 .conductorUI {
     height: 10%;
     width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 .conductorViewPlayerVideoDiv {
   height: 90%;
@@ -52,6 +58,7 @@ div.bottomView{
   height: 100%;
   width: 100%;
   text-align: center;
+  background-color: #99ff99;
 }
 .conductorViewLocalVideo {
   border: 2px solid #44aa44;
