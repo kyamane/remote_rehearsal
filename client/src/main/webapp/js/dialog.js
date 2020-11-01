@@ -447,6 +447,9 @@ function join() {
 //        fileAudioElement.addEventListener('canplay', function(e) {
         fileAudioElement.addEventListener('canplaythrough', function(e) {
             fileAudioStream = fileAudioElement.captureStream();
+            fileAudioStream.getTracks().forEach(function(track) {
+                console.log("track: ", track);
+            });
             broadcastStream('file_stream_id', fileAudioStream);
         });
 
@@ -776,11 +779,7 @@ function conductorCheckboxClicked(checkbox) {
 function updateAudioFile() {
     if(audioFileSelector.files.length > 0) {
         console.log("audio file selected: ", audioFileSelector.files[0]);
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            fileAudioElement.src = e.target.result;
-        }
-        reader.readAsDataURL(audioFileSelector.files[0]);
+        fileAudioElement.src = URL.createObjectURL(audioFileSelector.files[0]);
     }
 }
 
