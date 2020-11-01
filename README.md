@@ -89,7 +89,7 @@ Here is a graphical representation:
 1. The video and audio data are merged using [ffmpeg](https://ffmpeg.org/).
 
 ## Future Plan
-- [ ] Turn on/off audio of individual player
+- [X] Turn on/off audio of individual player
 - [ ] ~In the conductor view, arrange the player videos in the standard orchestra layout.~
 - [X] In the conductor view, enable rearranging player videos by drag-and-drop.
 - [ ] Conductor movement prediction: 1) build a (DNN?) model of conductor movement, perhaps using data from skeleton tracking with Azure Kinect; 2) learn a model to reconstruct conductor appearance from skeleton movement; 3) during rehearsal, show the conductor movement 2T seconds ahead of real time to the players, where T is the one-way latency between the conductor and players. Theoretically, the conductor should hear the sound like in an in-person rehearsal.
