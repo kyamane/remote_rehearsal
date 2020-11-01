@@ -753,12 +753,13 @@ function join() {
 
 function playerAudioMuteCallback(checkbox) {
     var id = checkbox.id.substring(6);  // remove audio_
-    console.log("mute player: ", id, ", checked: ", checkbox.checked);
     if(checkbox.checked) {
-        playGainNodes[id].gain.value = 0.0;
+        console.log("unmute player: ", id);
+        playGainNodes[id].gain.value = 1.0;
     }
     else {
-        playGainNodes[id].gain.value = 1.0;
+        console.log("mute player: ", id);
+        playGainNodes[id].gain.value = 0.0;
     }
 }
 
@@ -1057,16 +1058,21 @@ function playCombinedVideoURL(win, url) {
 function mutePlayersButtonCallback() {
     var keys = Object.keys(playGainNodes);
     const button = document.getElementById("mutePlayersButton");
+    // unmute all players, except those without checks
     if(playersMuted) {
         keys.forEach(function(id) {
             if(id != conductorId) {
-                console.log("unmuted ", id);
-                playGainNodes[id].gain.setValueAtTime(1.0, audioContext.currentTime);
+                var player_checkbox = document.getElementById("audio_" + id);
+                if(player_checkbox.checked) {
+                    console.log("unmuted ", id);
+                    playGainNodes[id].gain.setValueAtTime(1.0, audioContext.currentTime);
+                }
             }
         });
         button.value = "Mute Players (M)"
         playersMuted = false;
     }
+    // mute all players
     else {
         keys.forEach(function(id) {
             if(id != conductorId) {
